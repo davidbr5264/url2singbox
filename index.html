@@ -198,7 +198,7 @@ footer a{color:var(--amber);}
     <p class="sub">Drop in one or more <b>vless://</b>, <b>vmess://</b>, <b>trojan://</b>, <b>ss://</b>, <b>hysteria2://</b> or <b>tuic://</b> share links. This builds a sing-box <b>1.13+</b> client config — SOCKS inbound, TUN inbound, or both — entirely in your browser. Nothing is uploaded anywhere.</p>
 
     <div class="trace">
-      <div class="trace-head"><span>live route trace</span><span id="hopCount">— hops</span></div>
+      <div class="trace-head"><span>live route trace</span><span id="hopCount">— hops · — bypass domains</span></div>
       <div class="trace-body" id="traceBody"></div>
     </div>
   </header>
@@ -264,6 +264,12 @@ ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ@host:8388#SS-Node"></textarea>
       <div class="row" style="margin-top:6px;">
         <div><div class="lbl">Bypass LAN / private IPs</div><span class="hint">RFC1918 etc. go direct</span></div>
         <div class="ctl"><label class="switch"><input type="checkbox" id="bypassPrivate" checked><span class="slider"></span></label></div>
+      </div>
+      <div class="row" style="align-items:flex-start; flex-direction:column; gap:6px;">
+        <div style="width:100%;"><div class="lbl">Bypass domains</div><span class="hint">One per line — the domain and its subdomains go direct, skipping the proxy (and FakeIP, if on)</span></div>
+        <textarea id="bypassDomains" style="min-height:64px; width:100%;" placeholder="cn
+internal.corp.com
+example.local"></textarea>
       </div>
       <div class="row">
         <div><div class="lbl">Sniff + hijack DNS</div><span class="hint">Needed for domain-based routing under TUN</span></div>
@@ -378,8 +384,9 @@ function parseVLESS(url){
     uuid: decodeURIComponent(u.username)
   };
   if(p.flow) out.flow = p.flow;
-  const net = (p.type || 'tcp').toLowerCase();
-  if(net === 'tcp' || !p.type) out.network = 'tcp';
+  // NOTE: sing-box's vless "network" field is a tcp/udp allow-list, unrelated to the
+  // link's transport `type` (ws/grpc/tcp/...). Leave it unset so both stay enabled
+  // (the sing-box default) — setting it to "tcp" here would silently break UDP/QUIC.
   const tls = buildTLS(p, u.hostname);
   if(tls) out.tls = tls;
   const transport = buildTransport(p);
@@ -457,6 +464,13 @@ function parseSS(url){
     }
   }
   const out = { type: 'shadowsocks', tag, server: host, server_port: port, method, password };
+  // SIP002 plugin, e.g. ?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dbing.com
+  const rawPlugin = u.searchParams.get('plugin');
+  if(rawPlugin){
+    const [name, ...opts] = rawPlugin.split(';');
+    out.plugin = name;
+    if(opts.length) out.plugin_opts = opts.join(';');
+  }
   return { tag, protocol: 'shadowsocks', outbound: out };
 }
 
@@ -596,7 +610,8 @@ function renderTrace(){
       <span class="meta">${esc(h.meta)}</span>
     </div>`;
   }).join('');
-  document.getElementById('hopCount').textContent = hops.filter(h=>h.on!==false).length + ' active hops';
+  const bypassCount = document.getElementById('bypassDomains').value.split('\n').map(s=>s.trim()).filter(Boolean).length;
+  document.getElementById('hopCount').textContent = hops.filter(h=>h.on!==false).length + ' active hops · ' + bypassCount + ' bypass domain' + (bypassCount===1?'':'s');
 }
 
 /* ============================== toggles / enable-disable subgroups ============================== */
@@ -611,7 +626,7 @@ wireToggle('socksEnable','socksGroup');
 wireToggle('tunEnable','tunGroup');
 
 ['socksAddr','socksPort','socksUser','socksPass','tunName','tunAddr4','tunAddr6','tunMtu','tunStack',
- 'tunStrict','tunAutoRedirect','groupType','testUrl','testInterval','bypassPrivate','hijackDns','remoteDns','fakeIp']
+ 'tunStrict','tunAutoRedirect','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','remoteDns','fakeIp']
  .forEach(id=>{
    const el = document.getElementById(id);
    const evt = (el.type === 'checkbox' || el.tagName === 'SELECT') ? 'change' : 'input';
@@ -626,6 +641,10 @@ function buildConfig(){
   const hijackDns = document.getElementById('hijackDns').checked && tunOn;
   const fakeIp = document.getElementById('fakeIp').checked && tunOn;
   const groupType = document.getElementById('groupType').value;
+  const bypassDomains = document.getElementById('bypassDomains').value
+    .split('\n')
+    .map(s => s.trim().toLowerCase().replace(/^\*?\./, ''))
+    .filter(Boolean);
 
   const inbounds = [];
   if(socksOn){
@@ -672,6 +691,7 @@ function buildConfig(){
   routeRules.push({ action: 'sniff' });
   if(hijackDns) routeRules.push({ protocol: 'dns', action: 'hijack-dns' });
   if(bypassPrivate) routeRules.push({ ip_is_private: true, outbound: 'direct' });
+  if(bypassDomains.length) routeRules.push({ domain_suffix: bypassDomains, outbound: 'direct' });
 
   const dnsOpt = document.getElementById('remoteDns');
   const selected = dnsOpt.options[dnsOpt.selectedIndex];
@@ -685,11 +705,18 @@ function buildConfig(){
     dnsFinal = 'fakeip';
   }
 
+  // Bypassed domains must resolve via the local/system resolver — and must come
+  // *before* the fakeip catch-all, otherwise they'd get a fake address and direct
+  // routing would try to dial an IP that doesn't really exist.
+  const dnsRules = [];
+  if(bypassDomains.length) dnsRules.push({ domain_suffix: bypassDomains, server: 'local' });
+  if(fakeIp) dnsRules.push({ query_type: ['A','AAAA'], server: 'fakeip' });
+
   const config = {
     log: { level: 'info', timestamp: true },
     dns: {
       servers: dnsServers,
-      rules: fakeIp ? [{ query_type: ['A','AAAA'], server: 'fakeip' }] : undefined,
+      rules: dnsRules.length ? dnsRules : undefined,
       strategy: 'prefer_ipv4',
       final: dnsFinal
     },
