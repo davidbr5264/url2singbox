@@ -308,7 +308,8 @@ example.local"></textarea>
     Connect the repo with build command left empty and output directory <code>/</code> — or drag-and-drop this folder in the Pages dashboard under
     <i>Direct Upload</i>. All parsing runs client-side in JavaScript; no data leaves the browser.
     <br><br>
-    Generated configs assume sing-box ≥ 1.13. Running an older core? Swap the <code>{"action":"sniff"}</code> /
+    Generated configs assume sing-box ≥ 1.13 (current stable is 1.13.14) and are forward-compatible
+    with the upcoming 1.14 release. Running an older core? Swap the <code>{"action":"sniff"}</code> /
     <code>{"action":"hijack-dns"}</code> route rules for the equivalent legacy <code>inbound.sniff</code> /
     <code>dns</code>-outbound fields — see the <a href="https://sing-box.sagernet.org/migration/" target="_blank" rel="noopener">official migration guide</a>.
   </footer>
@@ -486,6 +487,10 @@ function parseHysteria2(url){
   if(p.obfs){ out.obfs = { type: p.obfs, password: p['obfs-password'] || p.obfspassword || '' }; }
   out.tls = { enabled: true, server_name: p.sni || u.hostname };
   if(p.insecure === '1') out.tls.insecure = true;
+  // Port hopping: share links encode the range as ?mport=20000-20100 (comma-separated
+  // for multiple ranges/ports). sing-box outbound wants an array in server_ports and
+  // keeps server_port as the initial/handshake port.
+  if(p.mport){ out.server_ports = p.mport.split(',').map(s => s.trim()).filter(Boolean); }
   return { tag, protocol: 'hysteria2', outbound: out };
 }
 
@@ -725,6 +730,13 @@ function buildConfig(){
     route: {
       rules: routeRules,
       auto_detect_interface: tunOn,
+      // Every proxy outbound here has a domain name as its `server`, and this config
+      // always defines >1 DNS server — so a resolver is mandatory (sing-box 1.14+ will
+      // refuse to start without one in that case; on 1.12/1.13 it's silently required for
+      // correctness). "local" avoids a bootstrap deadlock: resolving the proxy's own
+      // hostname through "remote"/"fakeip" would route that DNS lookup back through the
+      // proxy outbound before it has even connected.
+      default_domain_resolver: 'local',
       final: 'proxy'
     },
     experimental: {
