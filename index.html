@@ -186,6 +186,9 @@ footer a{color:var(--amber);}
   font-size:11.5px; color:var(--text-mute); margin-top:10px; padding:9px 11px;
   background:var(--panel-alt); border:1px solid var(--border-soft); border-radius:6px; font-family:var(--mono);
 }
+#secWarnings{
+  color:#F3B7B3; border-color:#4A2323; background:#231414; line-height:1.6;
+}
 .copied-flash{color:var(--teal) !important;}
 </style>
 </head>
@@ -250,7 +253,7 @@ ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ@host:8388#SS-Node"></textarea>
       <div class="subgroup disabled" id="tunGroup">
         <div class="row"><div class="lbl">Interface name</div><input type="text" id="tunName" value="sing-tun"></div>
         <div class="row"><div class="lbl">IPv4 address</div><input type="text" id="tunAddr4" value="172.19.0.1/30"></div>
-        <div class="row"><div class="lbl">IPv6 address<span class="hint">leave blank to disable</span></div><input type="text" id="tunAddr6" value="fdfe:dcba:9876::1/126"></div>
+        <div class="row"><div class="lbl">IPv6 address<span class="hint">Blank ≠ blocked — IPv6 traffic then bypasses the tunnel entirely unless you disable IPv6 in the OS</span></div><input type="text" id="tunAddr6" value="fdfe:dcba:9876::1/126"></div>
         <div class="row"><div class="lbl">MTU</div><input type="number" id="tunMtu" value="9000"></div>
         <div class="row"><div class="lbl">Stack</div>
           <select id="tunStack"><option value="mixed" selected>mixed</option><option value="system">system</option><option value="gvisor">gvisor</option></select>
@@ -299,8 +302,23 @@ example.local"></textarea>
       </div>
     </div>
 
+    <div class="card">
+      <h2><span class="idx">04</span> Security</h2>
+      <p class="desc">Checked live against what you've parsed and configured above.</p>
+
+      <div class="row">
+        <div><div class="lbl">Enforce certificate validation</div><span class="hint">Strip any <code style="font-family:var(--mono)">insecure</code> flag a link tries to set — refuses to trust an unverified TLS certificate</span></div>
+        <div class="ctl"><label class="switch"><input type="checkbox" id="enforceCert" checked><span class="slider"></span></label></div>
+      </div>
+      <div class="row">
+        <div><div class="lbl">Fail closed</div><span class="hint">If every proxy is unreachable, connections fail — never silently falls back to direct</span></div>
+        <div class="ctl" style="color:var(--teal); font-family:var(--mono); font-size:12px;">always on</div>
+      </div>
+      <div id="secWarnings" class="tip" style="display:none; margin-top:12px;"></div>
+    </div>
+
     <div class="card full">
-      <h2><span class="idx">04</span> Generated config</h2>
+      <h2><span class="idx">05</span> Generated config</h2>
       <div class="output-head">
         <span class="desc" style="margin:0;">Targets sing-box <b style="color:var(--text)">1.13+</b> syntax (rule-action based sniff / DNS hijack).</span>
         <div class="btnrow" style="margin:0;">
@@ -328,6 +346,7 @@ example.local"></textarea>
 <script>
 /* ============================== state ============================== */
 let proxies = []; // {id, tag, protocol, outbound}
+let secWarnings = []; // populated by buildConfig(), rendered by generate()
 
 /* ============================== helpers ============================== */
 function b64decode(str){
@@ -645,7 +664,7 @@ wireToggle('httpEnable','httpGroup');
 wireToggle('tunEnable','tunGroup');
 
 ['socksAddr','socksPort','socksUser','socksPass','httpAddr','httpPort','httpUser','httpPass','tunName','tunAddr4','tunAddr6','tunMtu','tunStack',
- 'tunStrict','tunAutoRedirect','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','remoteDns','fakeIp']
+ 'tunStrict','tunAutoRedirect','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','remoteDns','fakeIp','enforceCert']
  .forEach(id=>{
    const el = document.getElementById(id);
    const evt = (el.type === 'checkbox' || el.tagName === 'SELECT') ? 'change' : 'input';
@@ -654,6 +673,7 @@ wireToggle('tunEnable','tunGroup');
 
 /* ============================== config generation ============================== */
 function buildConfig(){
+  secWarnings = [];
   const socksOn = document.getElementById('socksEnable').checked;
   const httpOn = document.getElementById('httpEnable').checked;
   const tunOn = document.getElementById('tunEnable').checked;
@@ -661,6 +681,7 @@ function buildConfig(){
   const hijackDns = document.getElementById('hijackDns').checked && tunOn;
   const fakeIp = document.getElementById('fakeIp').checked && tunOn;
   const groupType = document.getElementById('groupType').value;
+  const enforceCert = document.getElementById('enforceCert').checked;
   const bypassDomains = document.getElementById('bypassDomains').value
     .split('\n')
     .map(s => s.trim().toLowerCase().replace(/^\*?\./, ''))
@@ -675,6 +696,9 @@ function buildConfig(){
     };
     const su = document.getElementById('socksUser').value, sp = document.getElementById('socksPass').value;
     if(su && sp) socks.users = [{ username: su, password: sp }];
+    if(socks.listen !== '127.0.0.1' && socks.listen !== 'localhost' && socks.listen !== '::1' && !socks.users){
+      secWarnings.push('SOCKS is bound to "' + socks.listen + '" with no username/password — anyone who can reach that address/port gets an open, unauthenticated proxy onto your network. Set an auth pair or bind to 127.0.0.1.');
+    }
     inbounds.push(socks);
   }
   if(httpOn){
@@ -685,6 +709,9 @@ function buildConfig(){
     };
     const hu = document.getElementById('httpUser').value, hp = document.getElementById('httpPass').value;
     if(hu && hp) http.users = [{ username: hu, password: hp }];
+    if(http.listen !== '127.0.0.1' && http.listen !== 'localhost' && http.listen !== '::1' && !http.users){
+      secWarnings.push('HTTP proxy is bound to "' + http.listen + '" with no username/password — anyone who can reach that address/port gets an open, unauthenticated proxy onto your network. Set an auth pair or bind to 127.0.0.1.');
+    }
     inbounds.push(http);
   }
   if(tunOn){
@@ -708,7 +735,19 @@ function buildConfig(){
     // config still valid but useless — keep as-is, caller warns in UI
   }
 
-  const outbounds = proxies.map(p => p.outbound);
+  // Deep-clone so stripping insecure TLS here never mutates the parsed proxy list —
+  // otherwise toggling "enforce certificate validation" back off would have nothing left to restore.
+  const outbounds = proxies.map(p => JSON.parse(JSON.stringify(p.outbound)));
+  outbounds.forEach(ob => {
+    if(ob.tls && ob.tls.insecure === true){
+      if(enforceCert){
+        delete ob.tls.insecure;
+        secWarnings.push('"' + ob.tag + '" (' + ob.type + ') requested skip-certificate-verification — stripped. It would otherwise accept any TLS certificate, including one from an attacker performing a man-in-the-middle attack.');
+      } else {
+        secWarnings.push('"' + ob.tag + '" (' + ob.type + ') has TLS certificate verification disabled — its traffic can be intercepted by anyone able to MITM the connection to the server. Only leave "Enforce certificate validation" off if you specifically know why this server uses a self-signed or unverified certificate.');
+      }
+    }
+  });
   const tags = proxies.map(p => p.tag);
   outbounds.push({
     type: groupType, tag: 'proxy',
@@ -787,6 +826,17 @@ function highlight(json){
   );
 }
 
+function renderSecurityPanel(){
+  const el = document.getElementById('secWarnings');
+  if(secWarnings.length === 0){
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.style.display = 'block';
+  el.innerHTML = secWarnings.map(w => '⚠ ' + esc(w)).join('<br><br>');
+}
+
 function generate(){
   const out = document.getElementById('output');
   const socksOn = document.getElementById('socksEnable').checked;
@@ -794,14 +844,17 @@ function generate(){
   const tunOn = document.getElementById('tunEnable').checked;
   if(proxies.length === 0){
     out.textContent = '// Parse at least one link above to generate a config.';
+    secWarnings = []; renderSecurityPanel();
     return;
   }
   if(!socksOn && !httpOn && !tunOn){
     out.textContent = '// Enable at least one inbound (SOCKS, HTTP, or TUN) to generate a usable config.';
+    secWarnings = []; renderSecurityPanel();
     return;
   }
   const cfg = buildConfig();
   out.innerHTML = highlight(cfg);
+  renderSecurityPanel();
 }
 
 document.getElementById('copyBtn').addEventListener('click', async ()=>{
