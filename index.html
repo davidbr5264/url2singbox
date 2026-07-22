@@ -195,7 +195,7 @@ footer a{color:var(--amber);}
   <header class="top">
     <div class="eyebrow"><span class="dot"></span>sing-box · client config generator</div>
     <h1>Paste a link.<br><span>Get a config that runs.</span></h1>
-    <p class="sub">Drop in one or more <b>vless://</b>, <b>vmess://</b>, <b>trojan://</b>, <b>ss://</b>, <b>hysteria2://</b> or <b>tuic://</b> share links. This builds a sing-box <b>1.13+</b> client config — SOCKS inbound, TUN inbound, or both — entirely in your browser. Nothing is uploaded anywhere.</p>
+    <p class="sub">Drop in one or more <b>vless://</b>, <b>vmess://</b>, <b>trojan://</b>, <b>ss://</b>, <b>hysteria2://</b> or <b>tuic://</b> share links. This builds a sing-box <b>1.13+</b> client config — SOCKS, HTTP, and/or TUN inbounds — entirely in your browser. Nothing is uploaded anywhere.</p>
 
     <div class="trace">
       <div class="trace-head"><span>live route trace</span><span id="hopCount">— hops · — bypass domains</span></div>
@@ -231,6 +231,16 @@ ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ@host:8388#SS-Node"></textarea>
         <div class="row"><div class="lbl">Listen address</div><input type="text" id="socksAddr" value="127.0.0.1"></div>
         <div class="row"><div class="lbl">Listen port</div><input type="number" id="socksPort" value="2080"></div>
         <div class="row"><div class="lbl">Auth (optional)</div><div class="ctl"><input type="text" id="socksUser" placeholder="user" style="width:70px"><input type="text" id="socksPass" placeholder="pass" style="width:70px"></div></div>
+      </div>
+
+      <div class="row" style="margin-top:6px;">
+        <div><div class="lbl">HTTP proxy</div><span class="hint">For tools that only take an HTTP(S)_PROXY env var</span></div>
+        <div class="ctl"><label class="switch"><input type="checkbox" id="httpEnable"><span class="slider"></span></label></div>
+      </div>
+      <div class="subgroup disabled" id="httpGroup">
+        <div class="row"><div class="lbl">Listen address</div><input type="text" id="httpAddr" value="127.0.0.1"></div>
+        <div class="row"><div class="lbl">Listen port</div><input type="number" id="httpPort" value="2081"></div>
+        <div class="row"><div class="lbl">Auth (optional)</div><div class="ctl"><input type="text" id="httpUser" placeholder="user" style="width:70px"><input type="text" id="httpPass" placeholder="pass" style="width:70px"></div></div>
       </div>
 
       <div class="row" style="margin-top:6px;">
@@ -591,8 +601,10 @@ document.getElementById('clearBtn').addEventListener('click', ()=>{
 /* ============================== UI: route trace ============================== */
 function renderTrace(){
   const socksOn = document.getElementById('socksEnable').checked;
+  const httpOn = document.getElementById('httpEnable').checked;
   const tunOn = document.getElementById('tunEnable').checked;
   const socksPort = document.getElementById('socksPort').value;
+  const httpPort = document.getElementById('httpPort').value;
   const tunName = document.getElementById('tunName').value;
   const groupType = document.getElementById('groupType').value;
   const n = proxies.length;
@@ -600,6 +612,7 @@ function renderTrace(){
   const hops = [];
   hops.push({label:'client application', meta:'127.0.0.1', tag:'src'});
   hops.push({label:'SOCKS5 :' + (socksPort||'—'), meta:'per-app', tag:'in', on:socksOn});
+  hops.push({label:'HTTP :' + (httpPort||'—'), meta:'per-app', tag:'in', on:httpOn});
   hops.push({label:'TUN ' + (tunName||'—'), meta:'system-wide', tag:'in', on:tunOn});
   hops.push({label:'sing-box core', meta:'route + sniff', tag:'core', core:true});
   hops.push({label:(groupType==='urltest'?'urltest':'selector') + ' group', meta: n + ' outbound' + (n===1?'':'s'), tag:'grp'});
@@ -628,9 +641,10 @@ function wireToggle(checkboxId, groupId){
   sync();
 }
 wireToggle('socksEnable','socksGroup');
+wireToggle('httpEnable','httpGroup');
 wireToggle('tunEnable','tunGroup');
 
-['socksAddr','socksPort','socksUser','socksPass','tunName','tunAddr4','tunAddr6','tunMtu','tunStack',
+['socksAddr','socksPort','socksUser','socksPass','httpAddr','httpPort','httpUser','httpPass','tunName','tunAddr4','tunAddr6','tunMtu','tunStack',
  'tunStrict','tunAutoRedirect','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','remoteDns','fakeIp']
  .forEach(id=>{
    const el = document.getElementById(id);
@@ -641,6 +655,7 @@ wireToggle('tunEnable','tunGroup');
 /* ============================== config generation ============================== */
 function buildConfig(){
   const socksOn = document.getElementById('socksEnable').checked;
+  const httpOn = document.getElementById('httpEnable').checked;
   const tunOn = document.getElementById('tunEnable').checked;
   const bypassPrivate = document.getElementById('bypassPrivate').checked;
   const hijackDns = document.getElementById('hijackDns').checked && tunOn;
@@ -661,6 +676,16 @@ function buildConfig(){
     const su = document.getElementById('socksUser').value, sp = document.getElementById('socksPass').value;
     if(su && sp) socks.users = [{ username: su, password: sp }];
     inbounds.push(socks);
+  }
+  if(httpOn){
+    const http = {
+      type: 'http', tag: 'http-in',
+      listen: document.getElementById('httpAddr').value || '127.0.0.1',
+      listen_port: Number(document.getElementById('httpPort').value) || 2081
+    };
+    const hu = document.getElementById('httpUser').value, hp = document.getElementById('httpPass').value;
+    if(hu && hp) http.users = [{ username: hu, password: hp }];
+    inbounds.push(http);
   }
   if(tunOn){
     const addr4 = document.getElementById('tunAddr4').value.trim();
@@ -765,13 +790,14 @@ function highlight(json){
 function generate(){
   const out = document.getElementById('output');
   const socksOn = document.getElementById('socksEnable').checked;
+  const httpOn = document.getElementById('httpEnable').checked;
   const tunOn = document.getElementById('tunEnable').checked;
   if(proxies.length === 0){
     out.textContent = '// Parse at least one link above to generate a config.';
     return;
   }
-  if(!socksOn && !tunOn){
-    out.textContent = '// Enable at least one inbound (SOCKS or TUN) to generate a usable config.';
+  if(!socksOn && !httpOn && !tunOn){
+    out.textContent = '// Enable at least one inbound (SOCKS, HTTP, or TUN) to generate a usable config.';
     return;
   }
   const cfg = buildConfig();
