@@ -32,6 +32,22 @@ All parsing happens in the browser — nothing is sent to a server.
 
 ## Changelog
 
+- **Added (DNS security pass):**
+  - An opt-in **"Block ads, malware & phishing (DNS)"** toggle. Uses
+    SagerNet's own official `geosite-category-ads-all` rule-set (fetched
+    from `raw.githubusercontent.com/SagerNet/sing-geosite` at runtime, not a
+    third-party mirror) and rejects matching lookups at the DNS layer —
+    before a connection is even attempted, not just after routing.
+  - **Automatic IPv6 leak hardening.** If TUN is on but you leave the IPv6
+    address blank, `dns.strategy` now switches to `ipv4_only` (instead of
+    `prefer_ipv4`), suppressing AAAA answers so apps are less likely to
+    try an IPv6 connection that would bypass the tunnel. A warning explains
+    this is a mitigation, not a guarantee — full protection means disabling
+    IPv6 in the OS too.
+  - A warning when TUN is off (SOCKS/HTTP-only mode) explaining that DNS
+    resolution then depends entirely on each app's own configuration, and
+    that most apps will resolve domains locally in cleartext unless
+    explicitly told to send DNS through the proxy.
 - **Added:** a Security card (section 04) with two things:
   - **Enforce certificate validation** (on by default) — strips any
     `insecure`/skip-verify flag a link tries to set on its TLS block, since
@@ -106,6 +122,30 @@ A few things worth understanding rather than a toggle silently deciding for you:
 - **`strict_route` (TUN, on by default)** stops packets addressed to the
   system's real gateway from slipping past the tunnel. Leave it on unless
   you have a specific reason not to.
+
+## DNS security notes
+
+- **EDNS Client Subnet is never sent.** Sing-box only adds an ECS record to
+  outgoing DNS queries if `client_subnet` is explicitly set — this
+  generator never sets it, so your approximate network location isn't
+  leaked to whichever resolver (Cloudflare/Google) you pick.
+- **DNS rebinding protection exists in sing-box, but isn't auto-generated
+  here.** A malicious or compromised DNS server can resolve a public-looking
+  domain to a private/internal address (e.g. `192.168.1.1`) to trick an app
+  into reaching something on your LAN it shouldn't. sing-box 1.14+ supports
+  detecting and rejecting this via an `evaluate` DNS rule paired with
+  `match_response`, but the exact shape differs between the current stable
+  (1.13) and 1.14, and getting it wrong silently breaks DNS resolution
+  rather than failing loudly — so this is deliberately left as a manual,
+  version-specific addition rather than something guessed here. See
+  https://sing-box.sagernet.org/configuration/dns/rule_action/ if you want
+  to add it by hand.
+- **The `local` bootstrap resolver and TUN don't loop for normal desktop/
+  mobile use** — sing-box's own outbound connections (including its
+  bootstrap DNS lookups) are excluded from being recaptured by `auto_route`.
+  This can differ if you're running sing-box as a shared *router/gateway*
+  for other devices' traffic rather than your own device's client — that's
+  a different deployment this generator doesn't target.
 
 ## Notes on protocol coverage
 
