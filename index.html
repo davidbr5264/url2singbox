@@ -289,12 +289,21 @@ example.local"></textarea>
         <div class="ctl"><label class="switch"><input type="checkbox" id="hijackDns" checked><span class="slider"></span></label></div>
       </div>
       <div class="row">
-        <div><div class="lbl">Remote DNS</div><span class="hint">Resolves domains through the proxy</span></div>
+        <div><div class="lbl">Remote DNS</div><span class="hint">Resolves domains through the proxy — always encrypted (DoH/DoT), plaintext isn't offered</span></div>
         <select id="remoteDns">
-          <option value="https://1.1.1.1/dns-query" data-type="https" data-server="1.1.1.1">Cloudflare DoH</option>
-          <option value="https://8.8.8.8/dns-query" data-type="https" data-server="8.8.8.8">Google DoH</option>
-          <option value="tls://8.8.8.8" data-type="tls" data-server="8.8.8.8">Google DoT</option>
+          <option value="cloudflare" data-type="https" data-server="1.1.1.1" selected>Cloudflare DoH</option>
+          <option value="google-doh" data-type="https" data-server="8.8.8.8">Google DoH</option>
+          <option value="google-dot" data-type="tls" data-server="8.8.8.8">Google DoT</option>
+          <option value="quad9" data-type="https" data-server="9.9.9.9">Quad9 DoH</option>
+          <option value="custom">Custom…</option>
         </select>
+      </div>
+      <div class="row" id="customDnsRow" style="display:none;">
+        <div><div class="lbl">Custom server</div><span class="hint">Hostname or IP only — defaults to DoH unless you pick DoT</span></div>
+        <div class="ctl">
+          <input type="text" id="customDnsHost" placeholder="dns.example.com" style="width:150px;">
+          <select id="customDnsFormat"><option value="https" selected>DoH</option><option value="tls">DoT</option></select>
+        </div>
       </div>
       <div class="row">
         <div><div class="lbl">FakeIP</div><span class="hint">TUN only — smoother domain routing</span></div>
@@ -667,8 +676,15 @@ wireToggle('socksEnable','socksGroup');
 wireToggle('httpEnable','httpGroup');
 wireToggle('tunEnable','tunGroup');
 
+const remoteDnsSelect = document.getElementById('remoteDns');
+const customDnsRow = document.getElementById('customDnsRow');
+function syncCustomDnsRow(){ customDnsRow.style.display = (remoteDnsSelect.value === 'custom') ? 'flex' : 'none'; }
+remoteDnsSelect.addEventListener('change', ()=>{ syncCustomDnsRow(); renderTrace(); generate(); });
+syncCustomDnsRow();
+
 ['socksAddr','socksPort','socksUser','socksPass','httpAddr','httpPort','httpUser','httpPass','tunName','tunAddr4','tunAddr6','tunMtu','tunStack',
- 'tunStrict','tunAutoRedirect','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','remoteDns','fakeIp','enforceCert','blockAds']
+ 'tunStrict','tunAutoRedirect','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','fakeIp','enforceCert','blockAds',
+ 'customDnsHost','customDnsFormat']
  .forEach(id=>{
    const el = document.getElementById(id);
    const evt = (el.type === 'checkbox' || el.tagName === 'SELECT') ? 'change' : 'input';
@@ -773,11 +789,29 @@ function buildConfig(){
   if(hijackDns) routeRules.push({ protocol: 'dns', action: 'hijack-dns' });
   if(bypassPrivate) routeRules.push({ ip_is_private: true, outbound: 'direct' });
   if(bypassDomains.length) routeRules.push({ domain_suffix: bypassDomains, outbound: 'direct' });
+  // Anything still headed for port 53 at this point wasn't sniffed as DNS traffic and wasn't
+  // exempted above (private network / explicit bypass) — reject it rather than let it tunnel
+  // out to whatever server an app hardcoded, bypassing the resolver chosen below entirely.
+  routeRules.push({ port: [53], network: ['tcp', 'udp'], action: 'reject' });
 
   const dnsOpt = document.getElementById('remoteDns');
-  const selected = dnsOpt.options[dnsOpt.selectedIndex];
+  let dnsType, dnsServer;
+  if(dnsOpt.value === 'custom'){
+    const customHost = document.getElementById('customDnsHost').value.trim();
+    if(customHost){
+      dnsType = document.getElementById('customDnsFormat').value || 'https'; // default DoH, never plaintext
+      dnsServer = customHost;
+    } else {
+      secWarnings.push('Custom DNS server was left blank — falling back to Cloudflare DoH (1.1.1.1).');
+      dnsType = 'https'; dnsServer = '1.1.1.1';
+    }
+  } else {
+    const selected = dnsOpt.options[dnsOpt.selectedIndex];
+    dnsType = selected.dataset.type;
+    dnsServer = selected.dataset.server;
+  }
   const dnsServers = [
-    { type: selected.dataset.type, tag: 'remote', server: selected.dataset.server },
+    { type: dnsType, tag: 'remote', server: dnsServer },
     { type: 'local', tag: 'local' }
   ];
   let dnsFinal = 'remote';
