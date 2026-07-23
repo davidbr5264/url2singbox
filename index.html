@@ -311,6 +311,10 @@ example.local"></textarea>
         <div class="ctl"><label class="switch"><input type="checkbox" id="enforceCert" checked><span class="slider"></span></label></div>
       </div>
       <div class="row">
+        <div><div class="lbl">Block ads, malware &amp; phishing (DNS)</div><span class="hint">Rejects lookups matching SagerNet's official <code style="font-family:var(--mono)">geosite-category-ads-all</code> list — fetched from GitHub at runtime</span></div>
+        <div class="ctl"><label class="switch"><input type="checkbox" id="blockAds"><span class="slider"></span></label></div>
+      </div>
+      <div class="row">
         <div><div class="lbl">Fail closed</div><span class="hint">If every proxy is unreachable, connections fail — never silently falls back to direct</span></div>
         <div class="ctl" style="color:var(--teal); font-family:var(--mono); font-size:12px;">always on</div>
       </div>
@@ -664,7 +668,7 @@ wireToggle('httpEnable','httpGroup');
 wireToggle('tunEnable','tunGroup');
 
 ['socksAddr','socksPort','socksUser','socksPass','httpAddr','httpPort','httpUser','httpPass','tunName','tunAddr4','tunAddr6','tunMtu','tunStack',
- 'tunStrict','tunAutoRedirect','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','remoteDns','fakeIp','enforceCert']
+ 'tunStrict','tunAutoRedirect','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','remoteDns','fakeIp','enforceCert','blockAds']
  .forEach(id=>{
    const el = document.getElementById(id);
    const evt = (el.type === 'checkbox' || el.tagName === 'SELECT') ? 'change' : 'input';
@@ -682,6 +686,7 @@ function buildConfig(){
   const fakeIp = document.getElementById('fakeIp').checked && tunOn;
   const groupType = document.getElementById('groupType').value;
   const enforceCert = document.getElementById('enforceCert').checked;
+  const blockAds = document.getElementById('blockAds').checked;
   const bypassDomains = document.getElementById('bypassDomains').value
     .split('\n')
     .map(s => s.trim().toLowerCase().replace(/^\*?\./, ''))
@@ -714,12 +719,14 @@ function buildConfig(){
     }
     inbounds.push(http);
   }
+  let ipv6Routed = false;
   if(tunOn){
     const addr4 = document.getElementById('tunAddr4').value.trim();
     const addr6 = document.getElementById('tunAddr6').value.trim();
     const address = [];
     if(addr4) address.push(addr4);
     if(addr6) address.push(addr6);
+    ipv6Routed = !!addr6;
     inbounds.push({
       type: 'tun', tag: 'tun-in',
       interface_name: document.getElementById('tunName').value || 'sing-tun',
@@ -730,6 +737,11 @@ function buildConfig(){
       auto_redirect: document.getElementById('tunAutoRedirect').checked,
       stack: document.getElementById('tunStack').value
     });
+    if(!ipv6Routed){
+      secWarnings.push('TUN has no IPv6 address configured, so DNS strategy is set to ipv4_only (suppressing AAAA answers) to reduce the chance of apps opening IPv6 connections that would bypass the tunnel. This only reduces the risk — for full protection, also disable IPv6 in your OS network settings.');
+    }
+  } else {
+    secWarnings.push('No TUN device — DNS resolution depends entirely on how each app is configured. Point apps at the SOCKS/HTTP proxy explicitly for DNS too (e.g. "remote DNS" in a browser, --socks5-hostname in curl); otherwise they may resolve domains locally in cleartext before ever reaching sing-box, leaking every site you visit to your network/ISP resolver.');
   }
   if(inbounds.length === 0){
     // config still valid but useless — keep as-is, caller warns in UI
@@ -778,6 +790,17 @@ function buildConfig(){
   // *before* the fakeip catch-all, otherwise they'd get a fake address and direct
   // routing would try to dial an IP that doesn't really exist.
   const dnsRules = [];
+  const ruleSets = [];
+  if(blockAds){
+    ruleSets.push({
+      tag: 'geosite-ads', type: 'remote', format: 'binary',
+      url: 'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs',
+      update_interval: '1d'
+    });
+    // Reject at the DNS layer, before a connection is ever attempted — cheaper and more
+    // thorough than blocking by route alone (which would still let the app resolve first).
+    dnsRules.push({ rule_set: ['geosite-ads'], action: 'reject' });
+  }
   if(bypassDomains.length) dnsRules.push({ domain_suffix: bypassDomains, server: 'local' });
   if(fakeIp) dnsRules.push({ query_type: ['A','AAAA'], server: 'fakeip' });
 
@@ -786,13 +809,16 @@ function buildConfig(){
     dns: {
       servers: dnsServers,
       rules: dnsRules.length ? dnsRules : undefined,
-      strategy: 'prefer_ipv4',
+      // ipv4_only when TUN isn't routing IPv6 suppresses AAAA answers, so apps are less
+      // likely to attempt an IPv6 connection that would bypass the tunnel entirely.
+      strategy: (tunOn && !ipv6Routed) ? 'ipv4_only' : 'prefer_ipv4',
       final: dnsFinal
     },
     inbounds,
     outbounds,
     route: {
       rules: routeRules,
+      rule_set: ruleSets.length ? ruleSets : undefined,
       auto_detect_interface: tunOn,
       // Every proxy outbound here has a domain name as its `server`, and this config
       // always defines >1 DNS server — so a resolver is mandatory (sing-box 1.14+ will
