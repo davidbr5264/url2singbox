@@ -786,13 +786,21 @@ function buildConfig(){
 
   const routeRules = [];
   routeRules.push({ action: 'sniff' });
-  if(hijackDns) routeRules.push({ protocol: 'dns', action: 'hijack-dns' });
+  // Private-network traffic (including DNS queries aimed at your own router) must be
+  // exempted *before* hijack-dns, or local/LAN DNS resolution breaks — every query would
+  // get redirected to the public resolver below even when it should reach a local server.
   if(bypassPrivate) routeRules.push({ ip_is_private: true, outbound: 'direct' });
+  if(hijackDns){
+    routeRules.push({ protocol: 'dns', action: 'hijack-dns' });
+    // Matching by port as well (not just sniffed protocol) is what actually guarantees
+    // nothing on port 53 bypasses the configured resolver, safely: hijack-dns always
+    // answers with a real response, so unlike a reject rule it can never blackhole a
+    // query that sniffing didn't recognize in time (that produced exactly this bug: UDP
+    // "reject" drops silently, so the app just hangs until its own timeout, then falls
+    // back to something else — which looked like "stuck loading, then suddenly works").
+    routeRules.push({ port: [53], action: 'hijack-dns' });
+  }
   if(bypassDomains.length) routeRules.push({ domain_suffix: bypassDomains, outbound: 'direct' });
-  // Anything still headed for port 53 at this point wasn't sniffed as DNS traffic and wasn't
-  // exempted above (private network / explicit bypass) — reject it rather than let it tunnel
-  // out to whatever server an app hardcoded, bypassing the resolver chosen below entirely.
-  routeRules.push({ port: [53], network: ['tcp', 'udp'], action: 'reject' });
 
   const dnsOpt = document.getElementById('remoteDns');
   let dnsType, dnsServer;
