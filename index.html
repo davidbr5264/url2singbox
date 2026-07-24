@@ -819,14 +819,21 @@ function buildConfig(){
     dnsServer = selected.dataset.server;
   }
   const dnsServers = [
-    { type: dnsType, tag: 'remote', server: dnsServer, detour: 'proxy' },
+    // No explicit `detour` here. sing-box's own docs confirm dial fields default to an
+    // equivalent-to-direct dial when detour is omitted — and setting it to "direct"
+    // explicitly is a confirmed FATAL error ("detour to an empty direct outbound makes
+    // no sense", sing-box refuses to start). There's also a confirmed compatibility bug
+    // detouring a DoH server through a urltest-type outbound (SagerNet/sing-box#3792),
+    // which is this generator's default group type — another reason to leave this alone.
+    { type: dnsType, tag: 'remote', server: dnsServer },
     // NOT type "local" — sing-box's own manual (manual/proxy/client) uses an explicit plain
     // resolver here, and a confirmed sing-box issue (#2643) documents exactly why: with TUN +
     // hijack-dns + FakeIP, the special "local" (OS-native) resolver's own query can get
     // re-captured by the tunnel and resolve to a *fake* IP, which sing-box then tries to dial
     // as if it were the real proxy server — an unrecoverable loop. Reusing the same provider
-    // you picked above (over plain UDP, `detour: direct`) avoids that ambiguity entirely.
-    { type: 'udp', tag: 'local', server: dnsServer, detour: 'direct' }
+    // you picked above (over plain UDP) avoids that ambiguity. No `detour` here either, for
+    // the same fatal-error reason noted above — omitting it already dials direct.
+    { type: 'udp', tag: 'local', server: dnsServer }
   ];
   let dnsFinal = 'remote';
   if(fakeIp){
