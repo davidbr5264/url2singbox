@@ -254,7 +254,7 @@ ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ@host:8388#SS-Node"></textarea>
         <div class="row"><div class="lbl">Interface name</div><input type="text" id="tunName" value="sing-tun"></div>
         <div class="row"><div class="lbl">IPv4 address</div><input type="text" id="tunAddr4" value="172.19.0.1/30"></div>
         <div class="row"><div class="lbl">IPv6 address<span class="hint">Blank ≠ blocked — IPv6 traffic then bypasses the tunnel entirely unless you disable IPv6 in the OS</span></div><input type="text" id="tunAddr6" value="fdfe:dcba:9876::1/126"></div>
-        <div class="row"><div class="lbl">MTU</div><input type="number" id="tunMtu" value="9000"></div>
+        <div class="row"><div class="lbl">MTU<span class="hint">1500 is safe for most networks; try 1400–1420 over mobile/PPPoE/nested VPNs</span></div><input type="number" id="tunMtu" value="1500"></div>
         <div class="row"><div class="lbl">Stack</div>
           <select id="tunStack"><option value="mixed" selected>mixed</option><option value="system">system</option><option value="gvisor">gvisor</option></select>
         </div>
@@ -747,7 +747,7 @@ function buildConfig(){
       type: 'tun', tag: 'tun-in',
       interface_name: document.getElementById('tunName').value || 'sing-tun',
       address,
-      mtu: Number(document.getElementById('tunMtu').value) || 9000,
+      mtu: Number(document.getElementById('tunMtu').value) || 1500,
       auto_route: true,
       strict_route: document.getElementById('tunStrict').checked,
       auto_redirect: document.getElementById('tunAutoRedirect').checked,
