@@ -258,7 +258,7 @@ ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ@host:8388#SS-Node"></textarea>
         <div class="row"><div class="lbl">Stack</div>
           <select id="tunStack"><option value="mixed" selected>mixed</option><option value="system">system</option><option value="gvisor">gvisor</option></select>
         </div>
-        <div class="row"><div class="lbl">strict_route</div><div class="ctl"><label class="switch"><input type="checkbox" id="tunStrict" checked><span class="slider"></span></label></div></div>
+        <div class="row"><div class="lbl">strict_route<span class="hint">Closes a leak, but has confirmed platform-specific bugs (Windows localhost, interface detection on complex networks) — try your setup with it off first, then turn on and re-test</span></div><div class="ctl"><label class="switch"><input type="checkbox" id="tunStrict"><span class="slider"></span></label></div></div>
         <div class="row"><div class="lbl">auto_redirect<span class="hint">Linux nftables, skip if unsure</span></div><div class="ctl"><label class="switch"><input type="checkbox" id="tunAutoRedirect"><span class="slider"></span></label></div></div>
       </div>
     </div>
