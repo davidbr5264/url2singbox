@@ -281,6 +281,10 @@ ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ@host:8388#SS-Node"></textarea>
         </div>
         <div class="row"><div class="lbl">strict_route<span class="hint">Off = DNS can leak around the tunnel (confirmed: Windows' multihomed resolution ignores TUN without this). On = closes that, but has its own confirmed bugs (Windows can't reach 127.0.0.1; interface mis-detection on complex networks)</span></div><div class="ctl"><label class="switch"><input type="checkbox" id="tunStrict" checked><span class="slider"></span></label></div></div>
         <div class="row"><div class="lbl">auto_redirect<span class="hint">Linux nftables, skip if unsure</span></div><div class="ctl"><label class="switch"><input type="checkbox" id="tunAutoRedirect"><span class="slider"></span></label></div></div>
+        <div class="row" style="align-items:flex-start;">
+          <div><div class="lbl">Network interface override<span class="hint">Leave blank normally. Fill in ONLY if the core starts but there's zero internet — sing-box's auto-detection of your real network adapter can fail on some networks/platforms with no fallback (confirmed: SagerNet/sing-box#1502). Find your adapter name via `ip addr` (Linux), `ifconfig` (macOS), your network adapter settings (Windows), or similar — e.g. eth0, en0, Wi-Fi.</span></div></div>
+          <input type="text" id="tunDefaultInterface" placeholder="e.g. eth0" style="width:110px;">
+        </div>
       </div>
     </div>
 
@@ -717,6 +721,8 @@ function importConfig(cfg){
     document.getElementById('tunAutoRedirect').checked = !!tunIn.auto_redirect;
     document.getElementById('tunStack').value = tunIn.stack || 'mixed';
   }
+  document.getElementById('tunDefaultInterface').value =
+    (cfg.route && cfg.route.auto_detect_interface === false && cfg.route.default_interface) ? cfg.route.default_interface : '';
 
   // ---- route rules -> routing/security toggles ----
   const routeRules = (cfg.route && Array.isArray(cfg.route.rules)) ? cfg.route.rules : [];
@@ -857,7 +863,7 @@ function refreshAllToggleStates(){
 }
 
 ['socksAddr','socksPort','socksUser','socksPass','httpAddr','httpPort','httpUser','httpPass','tunName','tunAddr4','tunAddr6','tunMtu','tunStack',
- 'tunStrict','tunAutoRedirect','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','fakeIp','enforceCert','blockAds',
+ 'tunStrict','tunAutoRedirect','tunDefaultInterface','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','fakeIp','enforceCert','blockAds',
  'customDnsHost','customDnsFormat']
  .forEach(id=>{
    const el = document.getElementById(id);
@@ -877,6 +883,7 @@ function buildConfig(){
   const groupType = document.getElementById('groupType').value;
   const enforceCert = document.getElementById('enforceCert').checked;
   const blockAds = document.getElementById('blockAds').checked;
+  const tunDefaultInterface = document.getElementById('tunDefaultInterface').value.trim();
   const bypassDomains = document.getElementById('bypassDomains').value
     .split('\n')
     .map(s => s.trim().toLowerCase().replace(/^\*?\./, ''))
@@ -1056,7 +1063,13 @@ function buildConfig(){
     route: {
       rules: routeRules,
       rule_set: ruleSets.length ? ruleSets : undefined,
-      auto_detect_interface: tunOn,
+      // default_interface only has any effect when auto_detect_interface is false (per
+      // sing-box's own route docs) — auto-detection is usually right and is the default,
+      // but it's confirmed to fail outright on some networks/platforms with no fallback
+      // (SagerNet/sing-box#1502: works once auto_detect_interface is disabled and the real
+      // adapter is named explicitly). Only switches over when the override field is filled in.
+      auto_detect_interface: tunOn && !tunDefaultInterface,
+      default_interface: (tunOn && tunDefaultInterface) ? tunDefaultInterface : undefined,
       // Every proxy outbound here has a domain name as its `server`, and this config
       // always defines >1 DNS server — so a resolver is mandatory (sing-box 1.14+ will
       // refuse to start without one in that case; on 1.12/1.13 it's silently required for
