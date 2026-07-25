@@ -316,10 +316,10 @@ example.local"></textarea>
       <div class="row">
         <div><div class="lbl">Remote DNS</div><span class="hint">Resolves domains through the proxy — always encrypted (DoH/DoT), plaintext isn't offered</span></div>
         <select id="remoteDns">
-          <option value="cloudflare" data-type="https" data-server="1.1.1.1" selected>Cloudflare DoH</option>
-          <option value="google-doh" data-type="https" data-server="8.8.8.8">Google DoH</option>
-          <option value="google-dot" data-type="tls" data-server="8.8.8.8">Google DoT</option>
-          <option value="quad9" data-type="https" data-server="9.9.9.9">Quad9 DoH</option>
+          <option value="cloudflare" data-type="https" data-server="1.1.1.1" data-sni="cloudflare-dns.com" selected>Cloudflare DoH</option>
+          <option value="google-doh" data-type="https" data-server="8.8.8.8" data-sni="dns.google">Google DoH</option>
+          <option value="google-dot" data-type="tls" data-server="8.8.8.8" data-sni="dns.google">Google DoT</option>
+          <option value="quad9" data-type="https" data-server="9.9.9.9" data-sni="dns.quad9.net">Quad9 DoH</option>
           <option value="custom">Custom…</option>
         </select>
       </div>
@@ -996,7 +996,7 @@ function buildConfig(){
   if(bypassDomains.length) routeRules.push({ domain_suffix: bypassDomains, outbound: 'direct' });
 
   const dnsOpt = document.getElementById('remoteDns');
-  let dnsType, dnsServer;
+  let dnsType, dnsServer, dnsSni;
   if(dnsOpt.value === 'custom'){
     const customHost = document.getElementById('customDnsHost').value.trim();
     if(customHost){
@@ -1004,13 +1004,29 @@ function buildConfig(){
       dnsServer = customHost;
     } else {
       secWarnings.push('Custom DNS server was left blank — falling back to Cloudflare DoH (1.1.1.1).');
-      dnsType = 'https'; dnsServer = '1.1.1.1';
+      dnsType = 'https'; dnsServer = '1.1.1.1'; dnsSni = 'cloudflare-dns.com';
     }
+    // No known canonical hostname for a custom entry — if it's already a hostname, TLS SNI
+    // and cert validation use it naturally; if it's an IP, that's on the person who entered
+    // it (this generator has no way to know the right hostname for an arbitrary server).
   } else {
     const selected = dnsOpt.options[dnsOpt.selectedIndex];
     dnsType = selected.dataset.type;
     dnsServer = selected.dataset.server;
+    dnsSni = selected.dataset.sni;
   }
+  // Connecting to a DoH/DoT provider by bare IP (all the presets above do this) only works
+  // reliably if the TLS certificate actually covers that IP as a SAN. Cloudflare's does; not
+  // every provider's does (confirmed necessary for Quad9 in real working configs). Setting the
+  // real hostname explicitly for both TLS validation and the HTTP Host header is strictly more
+  // correct either way, so it's applied for every preset rather than guessing per-provider.
+  function dnsServerOptions(type, sni){
+    if(!sni) return {};
+    const opts = { tls: { server_name: sni } };
+    if(type === 'https') opts.headers = { Host: sni };
+    return opts;
+  }
+
   const dnsServers = [
     // No explicit `detour` here. sing-box's own docs confirm dial fields default to an
     // equivalent-to-direct dial when detour is omitted — and setting it to "direct"
@@ -1018,7 +1034,7 @@ function buildConfig(){
     // no sense", sing-box refuses to start). There's also a confirmed compatibility bug
     // detouring a DoH server through a urltest-type outbound (SagerNet/sing-box#3792),
     // which is this generator's default group type — another reason to leave this alone.
-    { type: dnsType, tag: 'remote', server: dnsServer },
+    { type: dnsType, tag: 'remote', server: dnsServer, ...dnsServerOptions(dnsType, dnsSni) },
     // NOT type "local" — sing-box's own manual (manual/proxy/client) uses an explicit plain
     // resolver here, and a confirmed sing-box issue (#2643) documents exactly why: with TUN +
     // hijack-dns + FakeIP, the special "local" (OS-native) resolver's own query can get
@@ -1031,7 +1047,7 @@ function buildConfig(){
     // port 53 to anything but their own resolver, which would silently break bootstrap
     // resolution (and therefore *everything*, since sing-box can't find your proxy server
     // without it) while leaving port 443 alone, since blocking that breaks HTTPS broadly.
-    { type: dnsType, tag: 'local', server: dnsServer }
+    { type: dnsType, tag: 'local', server: dnsServer, ...dnsServerOptions(dnsType, dnsSni) }
   ];
   let dnsFinal = 'remote';
   if(fakeIp){
