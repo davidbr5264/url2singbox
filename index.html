@@ -349,6 +349,10 @@ example.local"></textarea>
         <div class="ctl"><label class="switch"><input type="checkbox" id="blockAds"><span class="slider"></span></label></div>
       </div>
       <div class="row">
+        <div><div class="lbl">Block browser built-in DoH</div><span class="hint">Chrome/Firefox/Edge often do their own DNS-over-HTTPS by default, invisibly bypassing hijack-dns entirely — this rejects connections to known built-in providers so the browser falls back to system DNS, which sing-box can actually see. Not exhaustive, and also blocks DoH for anything else that wants it deliberately.</span></div>
+        <div class="ctl"><label class="switch"><input type="checkbox" id="blockBrowserDoh"><span class="slider"></span></label></div>
+      </div>
+      <div class="row">
         <div><div class="lbl">Fail closed</div><span class="hint">If every proxy is unreachable, connections fail — never silently falls back to direct</span></div>
         <div class="ctl" style="color:var(--teal); font-family:var(--mono); font-size:12px;">always on</div>
       </div>
@@ -741,6 +745,8 @@ function importConfig(cfg){
 
   const ruleSets = (cfg.route && Array.isArray(cfg.route.rule_set)) ? cfg.route.rule_set : [];
   document.getElementById('blockAds').checked = ruleSets.some(rs => rs && /ads/i.test(rs.tag || ''));
+  document.getElementById('blockBrowserDoh').checked = routeRules.some(r =>
+    r && r.action === 'reject' && Array.isArray(r.domain_suffix) && r.domain_suffix.includes('dns.google'));
 
   // ---- dns ----
   const dnsServers = (cfg.dns && Array.isArray(cfg.dns.servers)) ? cfg.dns.servers : [];
@@ -871,7 +877,7 @@ function refreshAllToggleStates(){
 }
 
 ['socksAddr','socksPort','socksUser','socksPass','httpAddr','httpPort','httpUser','httpPass','tunName','tunAddr4','tunAddr6','tunMtu','tunStack',
- 'tunStrict','tunAutoRedirect','tunDefaultInterface','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','fakeIp','enforceCert','blockAds','verboseLog',
+ 'tunStrict','tunAutoRedirect','tunDefaultInterface','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','fakeIp','enforceCert','blockAds','blockBrowserDoh','verboseLog',
  'customDnsHost','customDnsFormat']
  .forEach(id=>{
    const el = document.getElementById(id);
@@ -891,6 +897,7 @@ function buildConfig(){
   const groupType = document.getElementById('groupType').value;
   const enforceCert = document.getElementById('enforceCert').checked;
   const blockAds = document.getElementById('blockAds').checked;
+  const blockBrowserDoh = document.getElementById('blockBrowserDoh').checked;
   const tunDefaultInterface = document.getElementById('tunDefaultInterface').value.trim();
   const bypassDomains = document.getElementById('bypassDomains').value
     .split('\n')
@@ -994,6 +1001,27 @@ function buildConfig(){
   }
   if(bypassPrivate) routeRules.push({ ip_is_private: true, outbound: 'direct' });
   if(bypassDomains.length) routeRules.push({ domain_suffix: bypassDomains, outbound: 'direct' });
+  if(blockBrowserDoh){
+    // Known built-in DoH endpoints Chrome/Firefox/Edge ship with by default (varies by
+    // browser/region/user choice — this can't be exhaustive). domain_suffix also catches
+    // subdomains, which matters here: Firefox's default Cloudflare endpoint is
+    // mozilla.cloudflare-dns.com, a subdomain of cloudflare-dns.com below.
+    // TCP reject (unlike a UDP reject) closes the connection cleanly and immediately —
+    // browsers are already built to handle a failed DoH attempt by falling back to system
+    // DNS, so this doesn't hang anything the way blocking UDP:53 outright would.
+    // Note: this list overlaps with the SNI values set on this generator's own DNS servers
+    // (e.g. cloudflare-dns.com) further down — that's not a conflict. DNS server connections
+    // dial directly and never pass through route.rules at all (the whole reason `detour` was
+    // removed from them earlier); this rule only ever sees actual routed traffic, i.e.
+    // browser/app connections, never sing-box's own DNS module.
+    routeRules.push({
+      domain_suffix: [
+        'cloudflare-dns.com', 'dns.google', 'doh.opendns.com', 'doh.familyshield.opendns.com',
+        'doh.cleanbrowsing.org', 'doh.xfinity.com', 'dns.quad9.net', 'dns.nextdns.io'
+      ],
+      action: 'reject'
+    });
+  }
 
   const dnsOpt = document.getElementById('remoteDns');
   let dnsType, dnsServer, dnsSni;
