@@ -190,6 +190,14 @@ footer a{color:var(--amber);}
   color:#F3B7B3; border-color:#4A2323; background:#231414; line-height:1.6;
 }
 .copied-flash{color:var(--teal) !important;}
+.filebtn{
+  display:inline-flex; align-items:center; cursor:pointer;
+  font-family:var(--sans); font-weight:600; font-size:13px;
+  border-radius:7px; padding:9px 16px; border:1px solid var(--border);
+  background:var(--panel-alt); color:var(--text); transition:border-color .15s, color .15s;
+}
+.filebtn:hover{border-color:var(--amber-dim); color:#fff;}
+.filebtn input[type=file]{display:none;}
 </style>
 </head>
 <body>
@@ -198,7 +206,7 @@ footer a{color:var(--amber);}
   <header class="top">
     <div class="eyebrow"><span class="dot"></span>sing-box · client config generator</div>
     <h1>Paste a link.<br><span>Get a config that runs.</span></h1>
-    <p class="sub">Drop in one or more <b>vless://</b>, <b>vmess://</b>, <b>trojan://</b>, <b>ss://</b>, <b>hysteria2://</b> or <b>tuic://</b> share links. This builds a sing-box <b>1.13+</b> client config — SOCKS, HTTP, and/or TUN inbounds — entirely in your browser. Nothing is uploaded anywhere.</p>
+    <p class="sub">Drop in one or more <b>vless://</b>, <b>vmess://</b>, <b>trojan://</b>, <b>ss://</b>, <b>hysteria2://</b> or <b>tuic://</b> share links — or import an existing sing-box config to pick up where it left off. This builds a sing-box <b>1.13+</b> client config — SOCKS, HTTP, and/or TUN inbounds — entirely in your browser. Nothing is uploaded anywhere.</p>
 
     <div class="trace">
       <div class="trace-head"><span>live route trace</span><span id="hopCount">— hops · — bypass domains</span></div>
@@ -209,7 +217,20 @@ footer a{color:var(--amber);}
   <div class="grid">
 
     <div class="card full">
-      <h2><span class="idx">01</span> Proxy links</h2>
+      <h2><span class="idx">01</span> Import existing config</h2>
+      <p class="desc">Already have a sing-box config.json? Load it here to pull in its proxies and settings, tweak anything below, then re-export. Replaces whatever's currently parsed.</p>
+      <textarea id="importInput" placeholder="Paste an existing sing-box config.json here, or use Choose file below…"></textarea>
+      <div class="btnrow">
+        <label class="filebtn"><span>Choose file</span><input type="file" id="importFile" accept=".json,application/json"></label>
+        <button class="primary" id="importBtn">Import config</button>
+        <button class="ghost" id="importClearBtn">Clear</button>
+      </div>
+      <div class="err" id="importErr"></div>
+      <div id="importSummary" class="tip" style="display:none;"></div>
+    </div>
+
+    <div class="card full">
+      <h2><span class="idx">02</span> Proxy links</h2>
       <p class="desc">One link per line. Each becomes an outbound in the generated config.</p>
       <textarea id="linksInput" placeholder="vless://uuid@host:443?security=tls&type=ws&path=%2Fws&host=example.com#My%20Server
 trojan://password@host:443?sni=example.com#Backup
@@ -223,7 +244,7 @@ ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ@host:8388#SS-Node"></textarea>
     </div>
 
     <div class="card">
-      <h2><span class="idx">02</span> Inbounds</h2>
+      <h2><span class="idx">03</span> Inbounds</h2>
       <p class="desc">How local apps or the OS reach sing-box.</p>
 
       <div class="row">
@@ -264,7 +285,7 @@ ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ@host:8388#SS-Node"></textarea>
     </div>
 
     <div class="card">
-      <h2><span class="idx">03</span> Outbound routing</h2>
+      <h2><span class="idx">04</span> Outbound routing</h2>
       <p class="desc">How traffic picks which proxy — and what skips the proxy.</p>
 
       <div class="row">
@@ -312,7 +333,7 @@ example.local"></textarea>
     </div>
 
     <div class="card">
-      <h2><span class="idx">04</span> Security</h2>
+      <h2><span class="idx">05</span> Security</h2>
       <p class="desc">Checked live against what you've parsed and configured above.</p>
 
       <div class="row">
@@ -331,7 +352,7 @@ example.local"></textarea>
     </div>
 
     <div class="card full">
-      <h2><span class="idx">05</span> Generated config</h2>
+      <h2><span class="idx">06</span> Generated config</h2>
       <div class="output-head">
         <span class="desc" style="margin:0;">Targets sing-box <b style="color:var(--text)">1.13+</b> syntax (rule-action based sniff / DNS hijack).</span>
         <div class="btnrow" style="margin:0;">
@@ -630,6 +651,148 @@ document.getElementById('clearBtn').addEventListener('click', ()=>{
   document.getElementById('parseErr').textContent = '';
 });
 
+/* ============================== import existing config ============================== */
+const PROTOCOL_TYPES = ['vless','vmess','trojan','shadowsocks','hysteria2','tuic'];
+
+function matchDnsPreset(type, server){
+  if(type === 'https' && server === '1.1.1.1') return 'cloudflare';
+  if(type === 'https' && server === '8.8.8.8') return 'google-doh';
+  if(type === 'tls' && server === '8.8.8.8') return 'google-dot';
+  if(type === 'https' && server === '9.9.9.9') return 'quad9';
+  return null;
+}
+
+// Reads an existing sing-box config object and populates every form field from it.
+// Returns a list of plain-text notes describing what was found/inferred, for display.
+function importConfig(cfg){
+  if(!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) throw new Error('not a JSON object');
+  const notes = [];
+
+  // ---- proxies: reuse outbound objects directly, same shape this tool already produces ----
+  const outbounds = Array.isArray(cfg.outbounds) ? cfg.outbounds : [];
+  const proxyOutbounds = outbounds.filter(o => o && PROTOCOL_TYPES.includes(o.type));
+  proxies = proxyOutbounds.map(o => ({
+    id: uid(), tag: o.tag || o.server || 'proxy', protocol: o.type,
+    outbound: JSON.parse(JSON.stringify(o))
+  }));
+  dedupeTags();
+  if(proxyOutbounds.length === 0) notes.push('No recognizable proxy outbounds found (vless/vmess/trojan/shadowsocks/hysteria2/tuic) — proxy list left empty.');
+
+  // ---- outbound group (selector/urltest) ----
+  const group = outbounds.find(o => o && (o.type === 'urltest' || o.type === 'selector'));
+  if(group){
+    document.getElementById('groupType').value = group.type;
+    document.getElementById('testUrl').value = group.url || 'https://www.gstatic.com/generate_204';
+    document.getElementById('testInterval').value = group.interval || '5m';
+  }
+
+  // ---- inbounds ----
+  const inbounds = Array.isArray(cfg.inbounds) ? cfg.inbounds : [];
+  const socksIn = inbounds.find(i => i && i.type === 'socks');
+  const httpIn = inbounds.find(i => i && i.type === 'http');
+  const tunIn = inbounds.find(i => i && i.type === 'tun');
+
+  document.getElementById('socksEnable').checked = !!socksIn;
+  document.getElementById('socksAddr').value = socksIn ? (socksIn.listen || '127.0.0.1') : '127.0.0.1';
+  document.getElementById('socksPort').value = socksIn ? (socksIn.listen_port || 2080) : 2080;
+  const socksUser = socksIn && Array.isArray(socksIn.users) && socksIn.users[0];
+  document.getElementById('socksUser').value = socksUser ? (socksUser.username || '') : '';
+  document.getElementById('socksPass').value = socksUser ? (socksUser.password || '') : '';
+
+  document.getElementById('httpEnable').checked = !!httpIn;
+  document.getElementById('httpAddr').value = httpIn ? (httpIn.listen || '127.0.0.1') : '127.0.0.1';
+  document.getElementById('httpPort').value = httpIn ? (httpIn.listen_port || 2081) : 2081;
+  const httpUser = httpIn && Array.isArray(httpIn.users) && httpIn.users[0];
+  document.getElementById('httpUser').value = httpUser ? (httpUser.username || '') : '';
+  document.getElementById('httpPass').value = httpUser ? (httpUser.password || '') : '';
+
+  document.getElementById('tunEnable').checked = !!tunIn;
+  if(tunIn){
+    document.getElementById('tunName').value = tunIn.interface_name || 'sing-tun';
+    const addrs = Array.isArray(tunIn.address) ? tunIn.address : [];
+    document.getElementById('tunAddr4').value = addrs.find(a => typeof a === 'string' && a.includes('.')) || '';
+    document.getElementById('tunAddr6').value = addrs.find(a => typeof a === 'string' && a.includes(':')) || '';
+    document.getElementById('tunMtu').value = tunIn.mtu || 1500;
+    document.getElementById('tunStrict').checked = !!tunIn.strict_route;
+    document.getElementById('tunAutoRedirect').checked = !!tunIn.auto_redirect;
+    document.getElementById('tunStack').value = tunIn.stack || 'mixed';
+  }
+
+  // ---- route rules -> routing/security toggles ----
+  const routeRules = (cfg.route && Array.isArray(cfg.route.rules)) ? cfg.route.rules : [];
+  document.getElementById('hijackDns').checked = routeRules.some(r => r && r.action === 'hijack-dns');
+  document.getElementById('bypassPrivate').checked = routeRules.some(r => r && r.ip_is_private === true && r.outbound === 'direct');
+  const bypassRule = routeRules.find(r => r && Array.isArray(r.domain_suffix) && r.outbound === 'direct');
+  document.getElementById('bypassDomains').value = bypassRule ? bypassRule.domain_suffix.join('\n') : '';
+
+  const ruleSets = (cfg.route && Array.isArray(cfg.route.rule_set)) ? cfg.route.rule_set : [];
+  document.getElementById('blockAds').checked = ruleSets.some(rs => rs && /ads/i.test(rs.tag || ''));
+
+  // ---- dns ----
+  const dnsServers = (cfg.dns && Array.isArray(cfg.dns.servers)) ? cfg.dns.servers : [];
+  const remoteServer = dnsServers.find(s => s && s.tag === 'remote') ||
+                        dnsServers.find(s => s && (s.type === 'https' || s.type === 'tls'));
+  const fakeipServer = dnsServers.find(s => s && s.type === 'fakeip');
+  document.getElementById('fakeIp').checked = !!fakeipServer;
+
+  if(remoteServer){
+    const preset = matchDnsPreset(remoteServer.type, remoteServer.server);
+    document.getElementById('remoteDns').value = preset || 'custom';
+    if(!preset){
+      document.getElementById('customDnsHost').value = remoteServer.server || '';
+      document.getElementById('customDnsFormat').value = (remoteServer.type === 'tls') ? 'tls' : 'https';
+    }
+  }
+
+  // ---- certificate enforcement: infer from whether any imported outbound already has insecure TLS ----
+  const anyInsecure = proxyOutbounds.some(o => o.tls && o.tls.insecure === true);
+  document.getElementById('enforceCert').checked = !anyInsecure;
+  if(anyInsecure) notes.push('Found outbound(s) with insecure TLS already set — "Enforce certificate validation" was switched off so re-generating doesn\'t silently strip it. Turn it back on if that was unintentional.');
+
+  const inboundNames = [socksIn && 'SOCKS', httpIn && 'HTTP', tunIn && 'TUN'].filter(Boolean);
+  notes.unshift(proxyOutbounds.length + ' proxy outbound(s) and ' +
+    (inboundNames.length ? inboundNames.join(' + ') + ' inbound(s)' : 'no recognized inbounds') + ' imported.');
+  notes.push('Re-exporting will normalize some structure to this tool\'s own conventions (group/outbound tag naming, rule layout) — settings carry over, byte-for-byte structure may not.');
+
+  refreshAllToggleStates();
+  renderProxyList(); renderTrace(); generate();
+  return notes;
+}
+
+document.getElementById('importFile').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { document.getElementById('importInput').value = reader.result; };
+  reader.onerror = () => { document.getElementById('importErr').textContent = 'Could not read that file.'; };
+  reader.readAsText(file);
+});
+
+document.getElementById('importBtn').addEventListener('click', ()=>{
+  const errEl = document.getElementById('importErr');
+  const sumEl = document.getElementById('importSummary');
+  errEl.textContent = ''; sumEl.style.display = 'none'; sumEl.innerHTML = '';
+  const raw = document.getElementById('importInput').value.trim();
+  if(!raw){ errEl.textContent = 'Paste a config or choose a file first.'; return; }
+  let cfg;
+  try{ cfg = JSON.parse(raw); }
+  catch(e){ errEl.textContent = 'Not valid JSON: ' + e.message; return; }
+  try{
+    const notes = importConfig(cfg);
+    sumEl.style.display = 'block';
+    sumEl.innerHTML = notes.map(n => '• ' + esc(n)).join('<br>');
+  }catch(e){
+    errEl.textContent = 'Could not import this config: ' + e.message;
+  }
+});
+
+document.getElementById('importClearBtn').addEventListener('click', ()=>{
+  document.getElementById('importInput').value = '';
+  document.getElementById('importFile').value = '';
+  document.getElementById('importErr').textContent = '';
+  document.getElementById('importSummary').style.display = 'none';
+});
+
 /* ============================== UI: route trace ============================== */
 function renderTrace(){
   const socksOn = document.getElementById('socksEnable').checked;
@@ -665,12 +828,14 @@ function renderTrace(){
 }
 
 /* ============================== toggles / enable-disable subgroups ============================== */
-function wireToggle(checkboxId, groupId){
+function syncSubgroup(checkboxId, groupId){
   const cb = document.getElementById(checkboxId);
   const grp = document.getElementById(groupId);
-  const sync = ()=> grp.classList.toggle('disabled', !cb.checked);
-  cb.addEventListener('change', ()=>{ sync(); renderTrace(); generate(); });
-  sync();
+  grp.classList.toggle('disabled', !cb.checked);
+}
+function wireToggle(checkboxId, groupId){
+  document.getElementById(checkboxId).addEventListener('change', ()=>{ syncSubgroup(checkboxId, groupId); renderTrace(); generate(); });
+  syncSubgroup(checkboxId, groupId);
 }
 wireToggle('socksEnable','socksGroup');
 wireToggle('httpEnable','httpGroup');
@@ -681,6 +846,15 @@ const customDnsRow = document.getElementById('customDnsRow');
 function syncCustomDnsRow(){ customDnsRow.style.display = (remoteDnsSelect.value === 'custom') ? 'flex' : 'none'; }
 remoteDnsSelect.addEventListener('change', ()=>{ syncCustomDnsRow(); renderTrace(); generate(); });
 syncCustomDnsRow();
+
+// Re-sync every subgroup/visibility state at once — used after an import populates form
+// fields directly (setting .checked/.value doesn't fire 'change' events on its own).
+function refreshAllToggleStates(){
+  syncSubgroup('socksEnable','socksGroup');
+  syncSubgroup('httpEnable','httpGroup');
+  syncSubgroup('tunEnable','tunGroup');
+  syncCustomDnsRow();
+}
 
 ['socksAddr','socksPort','socksUser','socksPass','httpAddr','httpPort','httpUser','httpPass','tunName','tunAddr4','tunAddr6','tunMtu','tunStack',
  'tunStrict','tunAutoRedirect','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','fakeIp','enforceCert','blockAds',
