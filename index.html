@@ -359,12 +359,20 @@ example.local"></textarea>
       <h2><span class="idx">06</span> Generated config</h2>
       <div class="output-head">
         <span class="desc" style="margin:0;">Targets sing-box <b style="color:var(--text)">1.13+</b> syntax (rule-action based sniff / DNS hijack).</span>
-        <div class="btnrow" style="margin:0;">
+        <div class="btnrow" style="margin:0; align-items:center;">
+          <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-dim); font-family:var(--mono); cursor:pointer;">
+            <input type="checkbox" id="verboseLog" style="accent-color:var(--amber);"> debug logging
+          </label>
           <button id="copyBtn">Copy JSON</button>
           <button id="downloadBtn" class="primary">Download config.json</button>
         </div>
       </div>
       <pre id="output">// Parse at least one link above to generate a config.</pre>
+      <p class="tip" style="margin-top:12px;">Troubleshooting something? Turn on debug logging above, reproduce the
+        problem, then check your sing-box client's log output — a "not working" symptom and an actual error message
+        are very different things to diagnose from. A quick way to tell if it's DNS specifically: try reaching a raw
+        IP address directly (no domain) while the tunnel is active — if that works but domains don't, it's DNS; if
+        neither works, it's the tunnel/routing itself.</p>
     </div>
 
   </div>
@@ -863,7 +871,7 @@ function refreshAllToggleStates(){
 }
 
 ['socksAddr','socksPort','socksUser','socksPass','httpAddr','httpPort','httpUser','httpPass','tunName','tunAddr4','tunAddr6','tunMtu','tunStack',
- 'tunStrict','tunAutoRedirect','tunDefaultInterface','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','fakeIp','enforceCert','blockAds',
+ 'tunStrict','tunAutoRedirect','tunDefaultInterface','groupType','testUrl','testInterval','bypassPrivate','bypassDomains','hijackDns','fakeIp','enforceCert','blockAds','verboseLog',
  'customDnsHost','customDnsFormat']
  .forEach(id=>{
    const el = document.getElementById(id);
@@ -1015,10 +1023,15 @@ function buildConfig(){
     // resolver here, and a confirmed sing-box issue (#2643) documents exactly why: with TUN +
     // hijack-dns + FakeIP, the special "local" (OS-native) resolver's own query can get
     // re-captured by the tunnel and resolve to a *fake* IP, which sing-box then tries to dial
-    // as if it were the real proxy server — an unrecoverable loop. Reusing the same provider
-    // you picked above (over plain UDP) avoids that ambiguity. No `detour` here either, for
-    // the same fatal-error reason noted above — omitting it already dials direct.
-    { type: 'udp', tag: 'local', server: dnsServer }
+    // as if it were the real proxy server — an unrecoverable loop. No `detour` here either,
+    // for the same fatal-error reason noted above — omitting it already dials direct.
+    //
+    // Uses the SAME encrypted transport as `remote` (not plain UDP:53) — many networks
+    // (corporate, some ISPs, public wifi/captive portals) specifically police or block
+    // port 53 to anything but their own resolver, which would silently break bootstrap
+    // resolution (and therefore *everything*, since sing-box can't find your proxy server
+    // without it) while leaving port 443 alone, since blocking that breaks HTTPS broadly.
+    { type: dnsType, tag: 'local', server: dnsServer }
   ];
   let dnsFinal = 'remote';
   if(fakeIp){
@@ -1045,7 +1058,7 @@ function buildConfig(){
   if(fakeIp) dnsRules.push({ query_type: ['A','AAAA'], server: 'fakeip' });
 
   const config = {
-    log: { level: 'info', timestamp: true },
+    log: { level: document.getElementById('verboseLog').checked ? 'debug' : 'info', timestamp: true },
     dns: {
       servers: dnsServers,
       rules: dnsRules.length ? dnsRules : undefined,
