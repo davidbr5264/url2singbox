@@ -148,21 +148,12 @@ trojan://password@host:443?sni=example.com#Backup"></textarea>
       <p class="desc">How local apps or the OS reach sing-box.</p>
 
       <div class="row">
-        <div class="lbl">SOCKS proxy</div>
-        <div class="ctl"><label class="switch"><input type="checkbox" id="socksEnable" checked><span class="slider"></span></label></div>
+        <div><div class="lbl">Local proxy</div><span class="hint">One port, handles SOCKS and HTTP simultaneously</span></div>
+        <div class="ctl"><label class="switch"><input type="checkbox" id="mixedEnable" checked><span class="slider"></span></label></div>
       </div>
-      <div class="subgroup" id="socksGroup">
-        <div class="row"><div class="lbl">Listen</div><div class="ctl"><input type="text" id="socksAddr" value="127.0.0.1" style="width:100px"><input type="number" id="socksPort" value="2080" style="width:70px"></div></div>
-        <div class="row"><div class="lbl">Auth (optional)</div><div class="ctl"><input type="text" id="socksUser" placeholder="user" style="width:70px"><input type="text" id="socksPass" placeholder="pass" style="width:70px"></div></div>
-      </div>
-
-      <div class="row" style="margin-top:6px;">
-        <div class="lbl">HTTP proxy</div>
-        <div class="ctl"><label class="switch"><input type="checkbox" id="httpEnable"><span class="slider"></span></label></div>
-      </div>
-      <div class="subgroup disabled" id="httpGroup">
-        <div class="row"><div class="lbl">Listen</div><div class="ctl"><input type="text" id="httpAddr" value="127.0.0.1" style="width:100px"><input type="number" id="httpPort" value="2081" style="width:70px"></div></div>
-        <div class="row"><div class="lbl">Auth (optional)</div><div class="ctl"><input type="text" id="httpUser" placeholder="user" style="width:70px"><input type="text" id="httpPass" placeholder="pass" style="width:70px"></div></div>
+      <div class="subgroup" id="mixedGroup">
+        <div class="row"><div class="lbl">Listen</div><div class="ctl"><input type="text" id="mixedAddr" value="127.0.0.1" style="width:100px"><input type="number" id="mixedPort" value="2080" style="width:70px"></div></div>
+        <div class="row"><div class="lbl">Auth (optional)</div><div class="ctl"><input type="text" id="mixedUser" placeholder="user" style="width:70px"><input type="text" id="mixedPass" placeholder="pass" style="width:70px"></div></div>
       </div>
 
       <div class="row" style="margin-top:6px;">
@@ -207,14 +198,14 @@ internal.corp.com"></textarea>
       <div class="row">
         <div class="lbl">Remote DNS</div>
         <select id="remoteDns">
-          <option value="cloudflare" data-type="https" data-server="1.1.1.1" data-sni="cloudflare-dns.com" selected>Cloudflare DoH</option>
-          <option value="google" data-type="https" data-server="8.8.8.8" data-sni="dns.google">Google DoH</option>
+          <option value="cloudflare" data-type="https" data-server="cloudflare-dns.com" selected>Cloudflare DoH</option>
+          <option value="google" data-type="https" data-server="dns.google">Google DoH</option>
           <option value="custom">Custom…</option>
         </select>
       </div>
       <div class="row" id="customDnsRow" style="display:none;">
-        <div class="lbl">Custom host</div>
-        <input type="text" id="customDnsHost" placeholder="dns.example.com" style="width:200px;">
+        <div><div class="lbl">Custom host</div><span class="hint">Use an IP address for reliability — a hostname here has no static bootstrap entry the way the presets do</span></div>
+        <input type="text" id="customDnsHost" placeholder="9.9.9.9" style="width:200px;">
       </div>
       <div class="row">
         <div><div class="lbl">FakeIP</div><span class="hint">TUN only — optional, sniff+hijack already routes by domain</span></div>
@@ -232,6 +223,10 @@ internal.corp.com"></textarea>
       <div class="row">
         <div><div class="lbl">Block ads &amp; trackers (DNS)</div><span class="hint">SagerNet's official geosite-category-ads-all list, fetched at runtime</span></div>
         <div class="ctl"><label class="switch"><input type="checkbox" id="blockAds"><span class="slider"></span></label></div>
+      </div>
+      <div class="row">
+        <div><div class="lbl">Block QUIC (force TCP fallback)</div><span class="hint">Rejects outbound UDP:443 — browsers heavily prefer QUIC/HTTP3, which can behave unpredictably under a tunnel; this forces the well-tested TCP+TLS fallback instead</span></div>
+        <div class="ctl"><label class="switch"><input type="checkbox" id="blockQuic"><span class="slider"></span></label></div>
       </div>
       <div id="warnings" class="tip" style="display:none;"></div>
     </div>
@@ -430,7 +425,10 @@ function parseOne(line){
 
 /* ============================== proxy list UI ============================== */
 function dedupeTags(){
-  const seen = {};
+  // "proxy" and "direct" are reserved — buildConfig() always creates outbounds with those
+  // exact tags for the group and the direct outbound. An imported proxy tagged "proxy"
+  // (a common convention — v2rayN's own default template does this) would otherwise collide.
+  const seen = { proxy: true, direct: true };
   proxies.forEach(pr=>{
     let base = pr.tag, t = base, i = 2;
     while(seen[t]){ t = base + '-' + (i++); }
@@ -501,25 +499,21 @@ function importConfig(cfg){
   }
 
   const inbounds = Array.isArray(cfg.inbounds) ? cfg.inbounds : [];
-  const socksIn = inbounds.find(i => i && i.type === 'socks');
-  const httpIn = inbounds.find(i => i && i.type === 'http');
+  // Prefer an existing "mixed" inbound; fall back to socks or http if that's what the
+  // imported config has instead (this generator only ever produces "mixed" itself, but
+  // imported configs from other tools commonly use separate socks/http inbounds).
+  const localIn = inbounds.find(i => i && i.type === 'mixed') ||
+                   inbounds.find(i => i && i.type === 'socks') ||
+                   inbounds.find(i => i && i.type === 'http');
   const tunIn = inbounds.find(i => i && i.type === 'tun');
 
-  document.getElementById('socksEnable').checked = !!socksIn;
-  if(socksIn){
-    document.getElementById('socksAddr').value = socksIn.listen || '127.0.0.1';
-    document.getElementById('socksPort').value = socksIn.listen_port || 2080;
-    const u = socksIn.users && socksIn.users[0];
-    document.getElementById('socksUser').value = u ? (u.username||'') : '';
-    document.getElementById('socksPass').value = u ? (u.password||'') : '';
-  }
-  document.getElementById('httpEnable').checked = !!httpIn;
-  if(httpIn){
-    document.getElementById('httpAddr').value = httpIn.listen || '127.0.0.1';
-    document.getElementById('httpPort').value = httpIn.listen_port || 2081;
-    const u = httpIn.users && httpIn.users[0];
-    document.getElementById('httpUser').value = u ? (u.username||'') : '';
-    document.getElementById('httpPass').value = u ? (u.password||'') : '';
+  document.getElementById('mixedEnable').checked = !!localIn;
+  if(localIn){
+    document.getElementById('mixedAddr').value = localIn.listen || '127.0.0.1';
+    document.getElementById('mixedPort').value = localIn.listen_port || 2080;
+    const u = localIn.users && localIn.users[0];
+    document.getElementById('mixedUser').value = u ? (u.username||'') : '';
+    document.getElementById('mixedPass').value = u ? (u.password||'') : '';
   }
   document.getElementById('tunEnable').checked = !!tunIn;
   if(tunIn){
@@ -537,6 +531,8 @@ function importConfig(cfg){
   document.getElementById('bypassPrivate').checked = routeRules.some(r => r && r.ip_is_private === true && r.outbound === 'direct');
   const bypassRule = routeRules.find(r => r && Array.isArray(r.domain_suffix) && r.outbound === 'direct');
   document.getElementById('bypassDomains').value = bypassRule ? bypassRule.domain_suffix.join('\n') : '';
+  document.getElementById('blockQuic').checked = routeRules.some(r =>
+    r && r.action === 'reject' && Array.isArray(r.network) && r.network.includes('udp') && Array.isArray(r.port) && r.port.includes(443));
 
   const ruleSets = (cfg.route && Array.isArray(cfg.route.rule_set)) ? cfg.route.rule_set : [];
   document.getElementById('blockAds').checked = ruleSets.some(rs => rs && /ads/i.test(rs.tag || ''));
@@ -545,8 +541,8 @@ function importConfig(cfg){
   const remoteServer = dnsServers.find(s => s && s.tag === 'remote') || dnsServers.find(s => s && (s.type === 'https' || s.type === 'tls'));
   document.getElementById('fakeIp').checked = dnsServers.some(s => s && s.type === 'fakeip');
   if(remoteServer){
-    if(remoteServer.server === '1.1.1.1') document.getElementById('remoteDns').value = 'cloudflare';
-    else if(remoteServer.server === '8.8.8.8') document.getElementById('remoteDns').value = 'google';
+    if(remoteServer.server === '1.1.1.1' || remoteServer.server === 'cloudflare-dns.com') document.getElementById('remoteDns').value = 'cloudflare';
+    else if(remoteServer.server === '8.8.8.8' || remoteServer.server === 'dns.google') document.getElementById('remoteDns').value = 'google';
     else { document.getElementById('remoteDns').value = 'custom'; document.getElementById('customDnsHost').value = remoteServer.server || ''; }
   }
 
@@ -556,7 +552,7 @@ function importConfig(cfg){
   refreshAllToggleStates();
   renderProxyList(); renderTrace(); generate();
 
-  const inboundNames = [socksIn && 'SOCKS', httpIn && 'HTTP', tunIn && 'TUN'].filter(Boolean);
+  const inboundNames = [localIn && (localIn.type==='mixed'?'SOCKS/HTTP':localIn.type.toUpperCase()), tunIn && 'TUN'].filter(Boolean);
   return proxyOutbounds.length + ' proxy outbound(s), ' + (inboundNames.join(' + ') || 'no inbounds') + ' imported.' +
     (anyInsecure ? ' Note: insecure TLS found — certificate enforcement switched off to preserve it.' : '');
 }
@@ -583,15 +579,13 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
 
 /* ============================== route trace ============================== */
 function renderTrace(){
-  const socksOn = document.getElementById('socksEnable').checked;
-  const httpOn = document.getElementById('httpEnable').checked;
+  const mixedOn = document.getElementById('mixedEnable').checked;
   const tunOn = document.getElementById('tunEnable').checked;
   const groupType = document.getElementById('groupType').value;
   const n = proxies.length;
   const hops = [
     { label:'client app', meta:'127.0.0.1', tag:'src' },
-    { label:'SOCKS :' + document.getElementById('socksPort').value, meta:'per-app', tag:'in', on:socksOn },
-    { label:'HTTP :' + document.getElementById('httpPort').value, meta:'per-app', tag:'in', on:httpOn },
+    { label:'SOCKS/HTTP :' + document.getElementById('mixedPort').value, meta:'per-app', tag:'in', on:mixedOn },
     { label:'TUN ' + document.getElementById('tunName').value, meta:'system-wide', tag:'in', on:tunOn },
     { label:'sing-box core', meta:'route + sniff', tag:'core', core:true },
     { label:(groupType==='urltest'?'urltest':'selector') + ' group', meta: n + ' outbound' + (n===1?'':'s'), tag:'grp' },
@@ -612,8 +606,7 @@ function wireToggle(checkboxId, groupId){
   document.getElementById(checkboxId).addEventListener('change', ()=>{ syncSubgroup(checkboxId, groupId); renderTrace(); generate(); });
   syncSubgroup(checkboxId, groupId);
 }
-wireToggle('socksEnable','socksGroup');
-wireToggle('httpEnable','httpGroup');
+wireToggle('mixedEnable','mixedGroup');
 wireToggle('tunEnable','tunGroup');
 
 const remoteDnsSelect = document.getElementById('remoteDns');
@@ -623,15 +616,14 @@ remoteDnsSelect.addEventListener('change', ()=>{ syncCustomDnsRow(); renderTrace
 syncCustomDnsRow();
 
 function refreshAllToggleStates(){
-  syncSubgroup('socksEnable','socksGroup');
-  syncSubgroup('httpEnable','httpGroup');
+  syncSubgroup('mixedEnable','mixedGroup');
   syncSubgroup('tunEnable','tunGroup');
   syncCustomDnsRow();
 }
 
-['socksAddr','socksPort','socksUser','socksPass','httpAddr','httpPort','httpUser','httpPass',
+['mixedAddr','mixedPort','mixedUser','mixedPass',
  'tunName','tunAddr4','tunAddr6','tunMtu','tunStack','tunStrict','groupType','testUrl',
- 'bypassPrivate','bypassDomains','hijackDns','fakeIp','enforceCert','blockAds','customDnsHost']
+ 'bypassPrivate','bypassDomains','hijackDns','fakeIp','enforceCert','blockAds','blockQuic','customDnsHost']
  .forEach(id=>{
    const el = document.getElementById(id);
    const evt = (el.type === 'checkbox' || el.tagName === 'SELECT') ? 'change' : 'input';
@@ -641,8 +633,7 @@ function refreshAllToggleStates(){
 /* ============================== config generation ============================== */
 function buildConfig(){
   warnings = [];
-  const socksOn = document.getElementById('socksEnable').checked;
-  const httpOn = document.getElementById('httpEnable').checked;
+  const mixedOn = document.getElementById('mixedEnable').checked;
   const tunOn = document.getElementById('tunEnable').checked;
   const bypassPrivate = document.getElementById('bypassPrivate').checked;
   const hijackDns = document.getElementById('hijackDns').checked && tunOn;
@@ -650,26 +641,21 @@ function buildConfig(){
   const groupType = document.getElementById('groupType').value;
   const enforceCert = document.getElementById('enforceCert').checked;
   const blockAds = document.getElementById('blockAds').checked;
+  const blockQuic = document.getElementById('blockQuic').checked;
   const bypassDomains = document.getElementById('bypassDomains').value.split('\n')
     .map(s => s.trim().toLowerCase().replace(/^\*?\./, '')).filter(Boolean);
 
   // ---- inbounds ----
   const inbounds = [];
-  if(socksOn){
-    const listen = document.getElementById('socksAddr').value || '127.0.0.1';
-    const socks = { type: 'socks', tag: 'socks-in', listen, listen_port: Number(document.getElementById('socksPort').value) || 2080 };
-    const su = document.getElementById('socksUser').value, sp = document.getElementById('socksPass').value;
-    if(su && sp) socks.users = [{ username: su, password: sp }];
-    else if(!['127.0.0.1','localhost','::1'].includes(listen)) warnings.push('SOCKS is bound to "' + listen + '" with no auth — that\'s an open proxy to anything that can reach it.');
-    inbounds.push(socks);
-  }
-  if(httpOn){
-    const listen = document.getElementById('httpAddr').value || '127.0.0.1';
-    const http = { type: 'http', tag: 'http-in', listen, listen_port: Number(document.getElementById('httpPort').value) || 2081 };
-    const hu = document.getElementById('httpUser').value, hp = document.getElementById('httpPass').value;
-    if(hu && hp) http.users = [{ username: hu, password: hp }];
-    else if(!['127.0.0.1','localhost','::1'].includes(listen)) warnings.push('HTTP proxy is bound to "' + listen + '" with no auth — that\'s an open proxy to anything that can reach it.');
-    inbounds.push(http);
+  if(mixedOn){
+    const listen = document.getElementById('mixedAddr').value || '127.0.0.1';
+    // "mixed" handles SOCKS and HTTP on one port — matches how mature clients (e.g. v2rayN)
+    // do this by default, instead of two separate inbounds for what's usually the same use case.
+    const mixed = { type: 'mixed', tag: 'mixed-in', listen, listen_port: Number(document.getElementById('mixedPort').value) || 2080 };
+    const mu = document.getElementById('mixedUser').value, mp = document.getElementById('mixedPass').value;
+    if(mu && mp) mixed.users = [{ username: mu, password: mp }];
+    else if(!['127.0.0.1','localhost','::1'].includes(listen)) warnings.push('Local proxy is bound to "' + listen + '" with no auth — that\'s an open proxy to anything that can reach it.');
+    inbounds.push(mixed);
   }
   if(tunOn){
     const addr4 = document.getElementById('tunAddr4').value.trim();
@@ -704,34 +690,52 @@ function buildConfig(){
 
   // ---- route rules (order matches sing-box's own reference client config) ----
   const routeRules = [{ action: 'sniff' }];
-  if(hijackDns) routeRules.push({ protocol: 'dns', action: 'hijack-dns' });
+  if(hijackDns){
+    // Matching by port as well as sniffed protocol (combined via a logical OR) means DNS
+    // traffic sniffing doesn't recognize in time still gets caught and answered by the
+    // configured resolver, rather than silently going elsewhere. Validated against a
+    // real-world production config (v2rayN's default template uses this exact pattern).
+    routeRules.push({ type: 'logical', mode: 'or', rules: [{ port: [53] }, { protocol: ['dns'] }], action: 'hijack-dns' });
+  }
   if(bypassPrivate) routeRules.push({ ip_is_private: true, outbound: 'direct' });
   if(bypassDomains.length) routeRules.push({ domain_suffix: bypassDomains, outbound: 'direct' });
+  if(blockQuic) routeRules.push({ network: ['udp'], port: [443], action: 'reject' });
 
   // ---- dns ----
   const dnsOpt = document.getElementById('remoteDns');
-  let dnsType, dnsServer, dnsSni;
+  let dnsType, dnsServer, useHosts = true;
   if(dnsOpt.value === 'custom'){
     const customHost = document.getElementById('customDnsHost').value.trim();
-    if(customHost){ dnsType = 'https'; dnsServer = customHost; }
-    else { warnings.push('Custom DNS server left blank — falling back to Cloudflare DoH.'); dnsType='https'; dnsServer='1.1.1.1'; dnsSni='cloudflare-dns.com'; }
+    if(customHost){ dnsType = 'https'; dnsServer = customHost; useHosts = false; }
+    else { warnings.push('Custom DNS server left blank — falling back to Cloudflare DoH.'); dnsType='https'; dnsServer='cloudflare-dns.com'; }
   } else {
     const selected = dnsOpt.options[dnsOpt.selectedIndex];
-    dnsType = selected.dataset.type; dnsServer = selected.dataset.server; dnsSni = selected.dataset.sni;
+    dnsType = selected.dataset.type; dnsServer = selected.dataset.server;
   }
-  // Connecting by bare IP only works reliably if the provider's cert covers that IP — setting
-  // the real hostname explicitly for TLS validation (and the HTTP Host header for DoH) is
-  // correct regardless of whether a given provider's cert happens to also cover the raw IP.
-  function dnsOpts(){ return dnsSni ? { tls: { server_name: dnsSni }, headers: { Host: dnsSni } } : {}; }
-
+  // Connect to the DoH/DoT provider by its real hostname, not a bare IP — sidesteps any
+  // question of whether a given provider's certificate covers a raw IP as a SAN, which isn't
+  // guaranteed for every provider. Resolving that hostname is instant and needs no network
+  // round-trip via a static "hosts" DNS server (a hardcoded lookup table) — the same pattern
+  // real-world sing-box clients (e.g. v2rayN's default template) use for exactly this.
+  // Custom entries skip this: there's no way to know the right static IPs for an arbitrary
+  // server in advance, so a custom value should be an IP directly.
   const dnsServers = [
-    { type: dnsType, tag: 'remote', server: dnsServer, ...dnsOpts() },
+    { type: dnsType, tag: 'remote', server: dnsServer, domain_resolver: useHosts ? 'hosts_dns' : undefined },
     // NOT the special "local" type — that can loop with TUN + hijack-dns + FakeIP (confirmed
     // sing-box issue). An explicit resolver, matching sing-box's own reference client config,
     // avoids it. Same encrypted transport as `remote`, not plain UDP:53, since many networks
     // specifically block/filter port 53 to enforce their own DNS.
-    { type: dnsType, tag: 'local', server: dnsServer, ...dnsOpts() }
+    { type: dnsType, tag: 'local', server: dnsServer, domain_resolver: useHosts ? 'hosts_dns' : undefined }
   ];
+  if(useHosts){
+    dnsServers.push({
+      type: 'hosts', tag: 'hosts_dns',
+      predefined: {
+        'cloudflare-dns.com': ['104.16.248.249', '104.16.249.249', '2606:4700::6810:f8f9', '2606:4700::6810:f9f9'],
+        'dns.google': ['8.8.8.8', '8.8.4.4', '2001:4860:4860::8888', '2001:4860:4860::8844']
+      }
+    });
+  }
   let dnsFinal = 'remote';
   if(fakeIp){
     dnsServers.push({ type: 'fakeip', tag: 'fakeip', inet4_range: '198.18.0.0/15', inet6_range: 'fc00::/18' });
@@ -789,11 +793,10 @@ function renderWarnings(){
 }
 function generate(){
   const out = document.getElementById('output');
-  const socksOn = document.getElementById('socksEnable').checked;
-  const httpOn = document.getElementById('httpEnable').checked;
+  const mixedOn = document.getElementById('mixedEnable').checked;
   const tunOn = document.getElementById('tunEnable').checked;
   if(proxies.length === 0){ out.textContent = '// Parse at least one link above to generate a config.'; warnings=[]; renderWarnings(); return; }
-  if(!socksOn && !httpOn && !tunOn){ out.textContent = '// Enable at least one inbound to generate a usable config.'; warnings=[]; renderWarnings(); return; }
+  if(!mixedOn && !tunOn){ out.textContent = '// Enable at least one inbound to generate a usable config.'; warnings=[]; renderWarnings(); return; }
   const cfg = buildConfig();
   out.innerHTML = highlight(cfg);
   renderWarnings();
