@@ -585,7 +585,19 @@ function buildConfig(){
   outbounds.push({ type: 'direct', tag: 'direct' });
 
   // ---- route rules (order matches sing-box's own reference client config) ----
-  const routeRules = [{ action: 'sniff' }];
+  const routeRules = [];
+  if(tunOn){
+    // Defense-in-depth against a confirmed failure mode: `auto_detect_interface` (used below
+    // to bind sing-box's own outbound connections to the real network interface) can fail to
+    // detect correctly on some networks/platforms, with no automatic fallback of its own
+    // (SagerNet/sing-box#1502, #3440) — when that happens, sing-box's own traffic can get
+    // recaptured by its own TUN device instead of escaping it. Matching by process name and
+    // routing direct, unconditionally and first (before anything else runs), catches that
+    // regardless of whether interface detection is working. Real-world precedent: production
+    // sing-box configs (e.g. v2rayN's default template) include exactly this kind of rule.
+    routeRules.push({ process_name: ['sing-box', 'sing-box.exe', 'sing-box-client.exe'], outbound: 'direct' });
+  }
+  routeRules.push({ action: 'sniff' });
   if(hijackDns){
     // Matching by port as well as sniffed protocol (combined via a logical OR) means DNS
     // traffic sniffing doesn't recognize in time still gets caught and answered by the
@@ -660,7 +672,12 @@ function buildConfig(){
       rules: dnsRules,
       strategy: 'prefer_ipv4',
       final: dnsFinal,
-      independent_cache: fakeIp ? true : undefined
+      // Always on, not just for FakeIP: `remote`, `local`, and `hosts_dns` all exist
+      // regardless of FakeIP, and a domain resolved by one server can get cached and then
+      // wrongly reused when a different server should have answered a later query for the
+      // same domain (a real, confirmed sing-box bug class) — a separate cache per server
+      // prevents that cross-contamination.
+      independent_cache: true
     },
     inbounds,
     outbounds,
