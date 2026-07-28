@@ -65,9 +65,6 @@ button.primary{background:var(--amber); border-color:var(--amber); color:#151515
 button.primary:hover{background:#f0ae52;}
 button.ghost{background:transparent;}
 button:disabled{opacity:.4; cursor:not-allowed;}
-.filebtn{display:inline-flex; align-items:center; cursor:pointer; font-family:var(--sans); font-weight:600; font-size:13px; border-radius:7px; padding:9px 16px; border:1px solid var(--border); background:var(--panel-alt); color:var(--text);}
-.filebtn:hover{border-color:var(--amber-dim); color:#fff;}
-.filebtn input[type=file]{display:none;}
 
 .proxy-list{margin-top:14px; display:flex; flex-direction:column; gap:8px;}
 .proxy{display:flex; align-items:center; gap:10px; padding:9px 12px; background:var(--panel-alt); border:1px solid var(--border-soft); border-radius:7px;}
@@ -119,7 +116,7 @@ footer a{color:var(--amber);}
   <header class="top">
     <div class="eyebrow"><span class="dot"></span>sing-box · client config generator</div>
     <h1>Paste a link.<br><span>Get a config that runs.</span></h1>
-    <p class="sub">Drop in one or more <b>vless://</b>, <b>vmess://</b>, <b>trojan://</b>, <b>ss://</b>, <b>hysteria2://</b> or <b>tuic://</b> share links — or import an existing config to edit. Builds a sing-box <b>1.13+</b> client config entirely in your browser. Nothing is uploaded anywhere.</p>
+    <p class="sub">Drop in one or more <b>vless://</b>, <b>vmess://</b>, <b>trojan://</b>, <b>ss://</b>, <b>hysteria2://</b> or <b>tuic://</b> share links. Builds a sing-box <b>1.13+</b> client config entirely in your browser. Nothing is uploaded anywhere.</p>
 
     <div class="trace">
       <div class="trace-head"><span>route</span><span id="hopCount">—</span></div>
@@ -131,13 +128,12 @@ footer a{color:var(--amber);}
 
     <div class="card full">
       <h2><span class="idx">01</span> Proxy links</h2>
-      <p class="desc">One link per line, or import an existing config.json below.</p>
+      <p class="desc">One link per line. Each becomes an outbound in the generated config.</p>
       <textarea id="linksInput" placeholder="vless://uuid@host:443?security=tls&type=ws&path=%2Fws&host=example.com#My%20Server
 trojan://password@host:443?sni=example.com#Backup"></textarea>
       <div class="btnrow">
         <button class="primary" id="parseBtn">Parse links</button>
         <button class="ghost" id="clearBtn">Clear</button>
-        <label class="filebtn"><span>Import config.json</span><input type="file" id="importFile" accept=".json,application/json"></label>
       </div>
       <div class="err" id="parseErr"></div>
       <div class="proxy-list" id="proxyList"></div>
@@ -426,8 +422,9 @@ function parseOne(line){
 /* ============================== proxy list UI ============================== */
 function dedupeTags(){
   // "proxy" and "direct" are reserved — buildConfig() always creates outbounds with those
-  // exact tags for the group and the direct outbound. An imported proxy tagged "proxy"
-  // (a common convention — v2rayN's own default template does this) would otherwise collide.
+  // exact tags for the group and the direct outbound. A link whose share-link name happens
+  // to be "proxy" (a common convention in other tools, e.g. v2rayN's default template) would
+  // otherwise collide with them.
   const seen = { proxy: true, direct: true };
   proxies.forEach(pr=>{
     let base = pr.tag, t = base, i = 2;
@@ -482,101 +479,6 @@ document.getElementById('clearBtn').addEventListener('click', ()=>{
   document.getElementById('parseErr').textContent = '';
 });
 
-/* ============================== import existing config ============================== */
-const PROTOCOL_TYPES = ['vless','vmess','trojan','shadowsocks','hysteria2','tuic'];
-
-function importConfig(cfg){
-  if(!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) throw new Error('not a JSON object');
-  const outbounds = Array.isArray(cfg.outbounds) ? cfg.outbounds : [];
-  const proxyOutbounds = outbounds.filter(o => o && PROTOCOL_TYPES.includes(o.type));
-  proxies = proxyOutbounds.map(o => ({ id: uid(), tag: o.tag || o.server || 'proxy', protocol: o.type, outbound: JSON.parse(JSON.stringify(o)) }));
-  dedupeTags();
-
-  const group = outbounds.find(o => o && (o.type === 'urltest' || o.type === 'selector'));
-  if(group){
-    document.getElementById('groupType').value = group.type;
-    document.getElementById('testUrl').value = group.url || 'https://www.gstatic.com/generate_204';
-  }
-
-  const inbounds = Array.isArray(cfg.inbounds) ? cfg.inbounds : [];
-  // Prefer an existing "mixed" inbound; fall back to socks or http if that's what the
-  // imported config has instead (this generator only ever produces "mixed" itself, but
-  // imported configs from other tools commonly use separate socks/http inbounds).
-  const localIn = inbounds.find(i => i && i.type === 'mixed') ||
-                   inbounds.find(i => i && i.type === 'socks') ||
-                   inbounds.find(i => i && i.type === 'http');
-  const tunIn = inbounds.find(i => i && i.type === 'tun');
-
-  document.getElementById('mixedEnable').checked = !!localIn;
-  if(localIn){
-    document.getElementById('mixedAddr').value = localIn.listen || '127.0.0.1';
-    document.getElementById('mixedPort').value = localIn.listen_port || 2080;
-    const u = localIn.users && localIn.users[0];
-    document.getElementById('mixedUser').value = u ? (u.username||'') : '';
-    document.getElementById('mixedPass').value = u ? (u.password||'') : '';
-  }
-  document.getElementById('tunEnable').checked = !!tunIn;
-  if(tunIn){
-    document.getElementById('tunName').value = tunIn.interface_name || 'sing-tun';
-    const addrs = Array.isArray(tunIn.address) ? tunIn.address : [];
-    document.getElementById('tunAddr4').value = addrs.find(a => typeof a === 'string' && a.includes('.')) || '';
-    document.getElementById('tunAddr6').value = addrs.find(a => typeof a === 'string' && a.includes(':')) || '';
-    document.getElementById('tunMtu').value = tunIn.mtu || 1500;
-    document.getElementById('tunStrict').checked = tunIn.strict_route !== false;
-    document.getElementById('tunStack').value = tunIn.stack || 'mixed';
-  }
-
-  const routeRules = (cfg.route && Array.isArray(cfg.route.rules)) ? cfg.route.rules : [];
-  document.getElementById('hijackDns').checked = routeRules.some(r => r && r.action === 'hijack-dns');
-  document.getElementById('bypassPrivate').checked = routeRules.some(r => r && r.ip_is_private === true && r.outbound === 'direct');
-  const bypassRule = routeRules.find(r => r && Array.isArray(r.domain_suffix) && r.outbound === 'direct');
-  document.getElementById('bypassDomains').value = bypassRule ? bypassRule.domain_suffix.join('\n') : '';
-  document.getElementById('blockQuic').checked = routeRules.some(r =>
-    r && r.action === 'reject' && Array.isArray(r.network) && r.network.includes('udp') && Array.isArray(r.port) && r.port.includes(443));
-
-  const ruleSets = (cfg.route && Array.isArray(cfg.route.rule_set)) ? cfg.route.rule_set : [];
-  document.getElementById('blockAds').checked = ruleSets.some(rs => rs && /ads/i.test(rs.tag || ''));
-
-  const dnsServers = (cfg.dns && Array.isArray(cfg.dns.servers)) ? cfg.dns.servers : [];
-  const remoteServer = dnsServers.find(s => s && s.tag === 'remote') || dnsServers.find(s => s && (s.type === 'https' || s.type === 'tls'));
-  document.getElementById('fakeIp').checked = dnsServers.some(s => s && s.type === 'fakeip');
-  if(remoteServer){
-    if(remoteServer.server === '1.1.1.1' || remoteServer.server === 'cloudflare-dns.com') document.getElementById('remoteDns').value = 'cloudflare';
-    else if(remoteServer.server === '8.8.8.8' || remoteServer.server === 'dns.google') document.getElementById('remoteDns').value = 'google';
-    else { document.getElementById('remoteDns').value = 'custom'; document.getElementById('customDnsHost').value = remoteServer.server || ''; }
-  }
-
-  const anyInsecure = proxyOutbounds.some(o => o.tls && o.tls.insecure === true);
-  document.getElementById('enforceCert').checked = !anyInsecure;
-
-  refreshAllToggleStates();
-  renderProxyList(); renderTrace(); generate();
-
-  const inboundNames = [localIn && (localIn.type==='mixed'?'SOCKS/HTTP':localIn.type.toUpperCase()), tunIn && 'TUN'].filter(Boolean);
-  return proxyOutbounds.length + ' proxy outbound(s), ' + (inboundNames.join(' + ') || 'no inbounds') + ' imported.' +
-    (anyInsecure ? ' Note: insecure TLS found — certificate enforcement switched off to preserve it.' : '');
-}
-
-document.getElementById('importFile').addEventListener('change', (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  const errEl = document.getElementById('parseErr');
-  const reader = new FileReader();
-  reader.onload = () => {
-    try{
-      const cfg = JSON.parse(reader.result);
-      const msg = importConfig(cfg);
-      errEl.style.color = 'var(--teal)';
-      errEl.textContent = msg;
-    }catch(err){
-      errEl.style.color = '';
-      errEl.textContent = 'Could not import: ' + err.message;
-    }
-  };
-  reader.readAsText(file);
-  e.target.value = '';
-});
-
 /* ============================== route trace ============================== */
 function renderTrace(){
   const mixedOn = document.getElementById('mixedEnable').checked;
@@ -614,12 +516,6 @@ const customDnsRow = document.getElementById('customDnsRow');
 function syncCustomDnsRow(){ customDnsRow.style.display = (remoteDnsSelect.value === 'custom') ? 'flex' : 'none'; }
 remoteDnsSelect.addEventListener('change', ()=>{ syncCustomDnsRow(); renderTrace(); generate(); });
 syncCustomDnsRow();
-
-function refreshAllToggleStates(){
-  syncSubgroup('mixedEnable','mixedGroup');
-  syncSubgroup('tunEnable','tunGroup');
-  syncCustomDnsRow();
-}
 
 ['mixedAddr','mixedPort','mixedUser','mixedPass',
  'tunName','tunAddr4','tunAddr6','tunMtu','tunStack','tunStrict','groupType','testUrl',
@@ -742,6 +638,13 @@ function buildConfig(){
     dnsFinal = 'fakeip';
   }
   const dnsRules = [];
+  // HTTPS (type 65) and SVCB (type 64) records carry connection-upgrade hints (HTTP/3
+  // support, ECH keys) that modern browsers query for. Short-circuiting them with an empty
+  // NOERROR response is a real pattern from production sing-box configs — it's safe (most
+  // domains don't have these records anyway, and browsers already handle a missing one by
+  // falling back to normal A/AAAA + TLS) and avoids these newer record types behaving
+  // unpredictably, particularly with FakeIP where they aren't simple address answers.
+  dnsRules.push({ action: 'predefined', rcode: 'NOERROR', query_type: [64, 65] });
   const ruleSets = [];
   if(blockAds){
     ruleSets.push({ tag: 'geosite-ads', type: 'remote', format: 'binary', url: 'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs', update_interval: '1d' });
@@ -754,7 +657,7 @@ function buildConfig(){
     log: { level: 'info', timestamp: true },
     dns: {
       servers: dnsServers,
-      rules: dnsRules.length ? dnsRules : undefined,
+      rules: dnsRules,
       strategy: 'prefer_ipv4',
       final: dnsFinal,
       independent_cache: fakeIp ? true : undefined
