@@ -164,7 +164,7 @@ trojan://password@host:443?sni=example.com#Backup"></textarea>
         <div class="row"><div class="lbl">Stack</div>
           <select id="tunStack"><option value="mixed" selected>mixed</option><option value="system">system</option><option value="gvisor">gvisor</option></select>
         </div>
-        <div class="row"><div><div class="lbl">strict_route</div><span class="hint">Recommended on — closes a real DNS/traffic leak</span></div><div class="ctl"><label class="switch"><input type="checkbox" id="tunStrict" checked><span class="slider"></span></label></div></div>
+        <div class="row"><div><div class="lbl">strict_route</div><span class="hint">Recommended on — sing-box's own changelog confirms this is what enables DNS hijacking on Windows</span></div><div class="ctl"><label class="switch"><input type="checkbox" id="tunStrict" checked><span class="slider"></span></label></div></div>
       </div>
     </div>
 
@@ -676,7 +676,10 @@ function buildConfig(){
       // regardless of FakeIP, and a domain resolved by one server can get cached and then
       // wrongly reused when a different server should have answered a later query for the
       // same domain (a real, confirmed sing-box bug class) — a separate cache per server
-      // prevents that cross-contamination.
+      // prevents that cross-contamination. Note: sing-box 1.14 deprecates this field (the
+      // DNS cache will key by transport automatically instead) and removes it in 1.16 — but
+      // this generator targets 1.13+, where it's still required for the behavior above, and
+      // a deprecated-but-present field is harmless on newer versions in the meantime.
       independent_cache: true
     },
     inbounds,
