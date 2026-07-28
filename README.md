@@ -92,16 +92,26 @@ A couple of things worth knowing that aren't bugs in the config itself:
   HTTPS traffic), so it bypasses whatever resolver you configured here. Not
   a config bug — check your browser's own secure-DNS setting if domain
   routing looks like it's being ignored.
-- **`strict_route`** closes a real leak — on Windows in particular, DNS can
-  otherwise go out any active network adapter rather than the tunnel. It
-  also has its own confirmed platform quirks in sing-box (e.g. reaching
-  `127.0.0.1` on Windows). Defaults on; worth knowing which trade-off you're
-  making if you turn it off.
+- **`strict_route`** closes a real leak — sing-box's own changelog (1.14.0-alpha.21)
+  confirms it directly: on Windows, the platform-level DNS hijacking filter
+  is only installed "when `strict_route` is enabled." Without it, DNS can go
+  out any active network adapter rather than the tunnel. It also has its own
+  confirmed platform quirks (e.g. reaching `127.0.0.1` on Windows). Defaults
+  on; worth knowing which trade-off you're making if you turn it off.
 - **FakeIP** has a confirmed sing-box crash bug in some versions
   (`SagerNet/sing-box#2528`, a startup race in the FakeIP store). If enabling
   it crashes your core, that's very likely a core-version issue rather than
   this config — check for an update, and leave it off in the meantime; it's
   optional.
+- **uTLS fingerprinting (`fp=chrome` etc. in a link) isn't a strong
+  anti-censorship measure**, per sing-box's own docs — this warning is
+  reiterated across multiple release changelogs (1.12.17, 1.13.0-beta.6,
+  1.13.0 itself), which is a sign SagerNet considers it worth repeating: it
+  has "fundamental architectural limitations" against real detection, and
+  NaiveProxy is recommended instead where TLS fingerprint resistance
+  actually matters. This generator applies whatever fingerprint a link
+  requests (or defaults to `chrome` for Reality) because that's what the
+  link asked for — it isn't a claim that doing so provides strong protection.
 
 ## Protocol coverage
 
