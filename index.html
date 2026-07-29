@@ -188,6 +188,19 @@ trojan://password@host:443?sni=example.com#Backup"></textarea>
 internal.corp.com"></textarea>
       </div>
       <div class="row">
+        <div><div class="lbl">Per-app routing</div><span class="hint">Windows/macOS/Linux (process name) and Android (package name) only — sing-box confirms this does not work on iOS at all. Requires TUN; a per-app proxy setting has no process info to match against.</span></div>
+        <select id="appRoutingMode">
+          <option value="off" selected>Off</option>
+          <option value="allow">Only these use the proxy</option>
+          <option value="deny">These always bypass it</option>
+        </select>
+      </div>
+      <div class="row" id="appRoutingRow" style="display:none; align-items:flex-start; flex-direction:column; gap:6px;">
+        <div style="width:100%;"><div class="lbl">App names</div><span class="hint">One per line — process name (chrome.exe, firefox) or Android package (com.android.chrome)</span></div>
+        <textarea id="appRoutingList" style="min-height:56px; width:100%;" placeholder="chrome.exe
+com.android.chrome"></textarea>
+      </div>
+      <div class="row">
         <div><div class="lbl">Sniff + hijack DNS</div><span class="hint">Needed for domain-based routing under TUN</span></div>
         <div class="ctl"><label class="switch"><input type="checkbox" id="hijackDns" checked><span class="slider"></span></label></div>
       </div>
@@ -517,9 +530,15 @@ function syncCustomDnsRow(){ customDnsRow.style.display = (remoteDnsSelect.value
 remoteDnsSelect.addEventListener('change', ()=>{ syncCustomDnsRow(); renderTrace(); generate(); });
 syncCustomDnsRow();
 
+const appRoutingModeSelect = document.getElementById('appRoutingMode');
+const appRoutingRow = document.getElementById('appRoutingRow');
+function syncAppRoutingRow(){ appRoutingRow.style.display = (appRoutingModeSelect.value === 'off') ? 'none' : 'flex'; }
+appRoutingModeSelect.addEventListener('change', ()=>{ syncAppRoutingRow(); renderTrace(); generate(); });
+syncAppRoutingRow();
+
 ['mixedAddr','mixedPort','mixedUser','mixedPass',
  'tunName','tunAddr4','tunAddr6','tunMtu','tunStack','tunStrict','groupType','testUrl',
- 'bypassPrivate','bypassDomains','hijackDns','fakeIp','enforceCert','blockAds','blockQuic','customDnsHost']
+ 'bypassPrivate','bypassDomains','appRoutingList','hijackDns','fakeIp','enforceCert','blockAds','blockQuic','customDnsHost']
  .forEach(id=>{
    const el = document.getElementById(id);
    const evt = (el.type === 'checkbox' || el.tagName === 'SELECT') ? 'change' : 'input';
@@ -596,6 +615,23 @@ function buildConfig(){
     // regardless of whether interface detection is working. Real-world precedent: production
     // sing-box configs (e.g. v2rayN's default template) include exactly this kind of rule.
     routeRules.push({ process_name: ['sing-box', 'sing-box.exe', 'sing-box-client.exe'], outbound: 'direct' });
+  }
+  const appRoutingMode = document.getElementById('appRoutingMode').value;
+  const appRoutingApps = document.getElementById('appRoutingList').value.split('\n').map(s => s.trim()).filter(Boolean);
+  let routeFinal = 'proxy';
+  if(appRoutingMode !== 'off' && appRoutingApps.length){
+    if(!tunOn) warnings.push('Per-app routing is set but TUN is off — process/package matching needs TUN\'s packet-level visibility. A SOCKS/HTTP proxy has no process info to match against, so this rule likely won\'t do anything without TUN enabled.');
+    // Populated into both fields regardless of which style of name was entered — process_name
+    // only matches on desktop, package_name only on Android, so whichever doesn't apply to a
+    // given platform simply never matches rather than causing an error either way.
+    if(appRoutingMode === 'allow'){
+      // Only listed apps get the proxy; everything else needs an explicit route to direct,
+      // since it's no longer implied by "final" (which now points at direct instead).
+      routeRules.push({ process_name: appRoutingApps, package_name: appRoutingApps, outbound: 'proxy' });
+      routeFinal = 'direct';
+    } else {
+      routeRules.push({ process_name: appRoutingApps, package_name: appRoutingApps, outbound: 'direct' });
+    }
   }
   routeRules.push({ action: 'sniff' });
   if(hijackDns){
@@ -704,7 +740,7 @@ function buildConfig(){
       rule_set: ruleSets.length ? ruleSets : undefined,
       auto_detect_interface: tunOn,
       default_domain_resolver: 'local',
-      final: 'proxy'
+      final: routeFinal
     },
     experimental: {
       cache_file: {
