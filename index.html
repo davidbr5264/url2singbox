@@ -194,8 +194,8 @@ internal.corp.com"></textarea>
       <div class="row">
         <div class="lbl">Remote DNS</div>
         <select id="remoteDns">
-          <option value="cloudflare" data-type="https" data-server="cloudflare-dns.com" selected>Cloudflare DoH</option>
-          <option value="google" data-type="https" data-server="dns.google">Google DoH</option>
+          <option value="cloudflare" data-type="https" data-server="cloudflare-dns.com" data-ip="1.1.1.1" selected>Cloudflare DoH</option>
+          <option value="google" data-type="https" data-server="dns.google" data-ip="8.8.8.8">Google DoH</option>
           <option value="custom">Custom…</option>
         </select>
       </div>
@@ -611,14 +611,19 @@ function buildConfig(){
 
   // ---- dns ----
   const dnsOpt = document.getElementById('remoteDns');
-  let dnsType, dnsServer, useHosts = true;
+  let dnsType, dnsServer, dnsDirectIp, useHosts = true;
   if(dnsOpt.value === 'custom'){
     const customHost = document.getElementById('customDnsHost').value.trim();
-    if(customHost){ dnsType = 'https'; dnsServer = customHost; useHosts = false; }
-    else { warnings.push('Custom DNS server left blank — falling back to Cloudflare DoH.'); dnsType='https'; dnsServer='cloudflare-dns.com'; }
+    if(customHost){
+      dnsType = 'https'; dnsServer = customHost; useHosts = false;
+      dnsDirectIp = /^[\d.:a-fA-F]+$/.test(customHost) ? customHost : '1.1.1.1';
+    } else {
+      warnings.push('Custom DNS server left blank — falling back to Cloudflare DoH.');
+      dnsType='https'; dnsServer='cloudflare-dns.com'; dnsDirectIp='1.1.1.1';
+    }
   } else {
     const selected = dnsOpt.options[dnsOpt.selectedIndex];
-    dnsType = selected.dataset.type; dnsServer = selected.dataset.server;
+    dnsType = selected.dataset.type; dnsServer = selected.dataset.server; dnsDirectIp = selected.dataset.ip;
   }
   // Connect to the DoH/DoT provider by its real hostname, not a bare IP — sidesteps any
   // question of whether a given provider's certificate covers a raw IP as a SAN, which isn't
@@ -632,8 +637,18 @@ function buildConfig(){
     // NOT the special "local" type — that can loop with TUN + hijack-dns + FakeIP (confirmed
     // sing-box issue). An explicit resolver, matching sing-box's own reference client config,
     // avoids it. Same encrypted transport as `remote`, not plain UDP:53, since many networks
-    // specifically block/filter port 53 to enforce their own DNS.
-    { type: dnsType, tag: 'local', server: dnsServer, domain_resolver: useHosts ? 'hosts_dns' : undefined }
+    // specifically block/filter port 53 to enforce their own DNS. Used for
+    // default_domain_resolver (your proxy server's own hostname) — deliberately kept encrypted
+    // rather than matching the plain-UDP bootstrap some reference configs use for this,
+    // since there's no reason to let even that one query go out in cleartext.
+    { type: dnsType, tag: 'local', server: dnsServer, domain_resolver: useHosts ? 'hosts_dns' : undefined },
+    // A separate plain-UDP tier, by bare IP (no cert/SNI concerns — plain DNS has no TLS
+    // handshake), used only for bypass-domain resolution. This matters for correctness, not
+    // just structure: DNS-based CDN routing picks the nearest edge based on the resolver's
+    // location, not yours. Domains you've explicitly bypassed are domains you've already
+    // decided don't need privacy protection — resolving them through a foreign encrypted
+    // resolver anyway can land you on the wrong CDN edge. Matches v2rayN's direct_dns pattern.
+    { type: 'udp', tag: 'direct', server: dnsDirectIp }
   ];
   if(useHosts){
     dnsServers.push({
@@ -662,7 +677,7 @@ function buildConfig(){
     ruleSets.push({ tag: 'geosite-ads', type: 'remote', format: 'binary', url: 'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs', update_interval: '1d' });
     dnsRules.push({ rule_set: ['geosite-ads'], action: 'reject' });
   }
-  if(bypassDomains.length) dnsRules.push({ domain_suffix: bypassDomains, server: 'local' });
+  if(bypassDomains.length) dnsRules.push({ domain_suffix: bypassDomains, server: 'direct' });
   if(fakeIp) dnsRules.push({ query_type: ['A','AAAA'], server: 'fakeip' });
 
   const config = {
@@ -691,7 +706,17 @@ function buildConfig(){
       default_domain_resolver: 'local',
       final: 'proxy'
     },
-    experimental: { cache_file: { enabled: true } }
+    experimental: {
+      cache_file: {
+        enabled: true,
+        // Matches v2rayN's explicit choice. Not a confirmed fix for the FakeIP startup-race
+        // crash discussed elsewhere in this generator's notes, but not persisting FakeIP
+        // mappings across restarts is a reasonable, low-risk step — there's less cached state
+        // for that store to reconcile at startup, and losing old fake IPs on restart is
+        // harmless (apps just re-resolve).
+        store_fakeip: fakeIp ? false : undefined
+      }
+    }
   };
   return config;
 }
