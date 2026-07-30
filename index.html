@@ -144,6 +144,17 @@ trojan://password@host:443?sni=example.com#Backup"></textarea>
       <p class="desc">How local apps or the OS reach sing-box.</p>
 
       <div class="row">
+        <div><div class="lbl">Device</div><span class="hint">Adjusts self-exclusion, per-app routing, and platform-only fields below</span></div>
+        <select id="deviceType">
+          <option value="windows" selected>Windows</option>
+          <option value="macos">macOS</option>
+          <option value="linux">Linux</option>
+          <option value="android">Android</option>
+          <option value="ios">iOS</option>
+        </select>
+      </div>
+
+      <div class="row">
         <div><div class="lbl">Local proxy</div><span class="hint">One port, handles SOCKS and HTTP simultaneously</span></div>
         <div class="ctl"><label class="switch"><input type="checkbox" id="mixedEnable" checked><span class="slider"></span></label></div>
       </div>
@@ -165,6 +176,7 @@ trojan://password@host:443?sni=example.com#Backup"></textarea>
           <select id="tunStack"><option value="mixed" selected>mixed</option><option value="system">system</option><option value="gvisor">gvisor</option></select>
         </div>
         <div class="row"><div><div class="lbl">strict_route</div><span class="hint">Recommended on — sing-box's own changelog confirms this is what enables DNS hijacking on Windows</span></div><div class="ctl"><label class="switch"><input type="checkbox" id="tunStrict" checked><span class="slider"></span></label></div></div>
+        <div class="row" id="autoRedirectRow" style="display:none;"><div><div class="lbl">auto_redirect</div><span class="hint">Linux + nftables only — routes via firewall redirect instead of pure TUN capture</span></div><div class="ctl"><label class="switch"><input type="checkbox" id="tunAutoRedirect"><span class="slider"></span></label></div></div>
       </div>
     </div>
 
@@ -188,7 +200,7 @@ trojan://password@host:443?sni=example.com#Backup"></textarea>
 internal.corp.com"></textarea>
       </div>
       <div class="row">
-        <div><div class="lbl">Per-app routing</div><span class="hint">Windows/macOS/Linux (process name) and Android (package name) only — sing-box confirms this does not work on iOS at all. Requires TUN; a per-app proxy setting has no process info to match against.</span></div>
+        <div><div class="lbl">Per-app routing</div><span class="hint" id="appRoutingHint">Windows: process name. Requires TUN.</span></div>
         <select id="appRoutingMode">
           <option value="off" selected>Off</option>
           <option value="allow">Only these use the proxy</option>
@@ -196,9 +208,8 @@ internal.corp.com"></textarea>
         </select>
       </div>
       <div class="row" id="appRoutingRow" style="display:none; align-items:flex-start; flex-direction:column; gap:6px;">
-        <div style="width:100%;"><div class="lbl">App names</div><span class="hint">One per line — process name (chrome.exe, firefox) or Android package (com.android.chrome)</span></div>
-        <textarea id="appRoutingList" style="min-height:56px; width:100%;" placeholder="chrome.exe
-com.android.chrome"></textarea>
+        <div style="width:100%;"><div class="lbl">App names</div><span class="hint" id="appRoutingListHint">One per line — process name, e.g. chrome.exe</span></div>
+        <textarea id="appRoutingList" style="min-height:56px; width:100%;" placeholder="chrome.exe"></textarea>
       </div>
       <div class="row">
         <div><div class="lbl">Sniff + hijack DNS</div><span class="hint">Needed for domain-based routing under TUN</span></div>
@@ -536,8 +547,34 @@ function syncAppRoutingRow(){ appRoutingRow.style.display = (appRoutingModeSelec
 appRoutingModeSelect.addEventListener('change', ()=>{ syncAppRoutingRow(); renderTrace(); generate(); });
 syncAppRoutingRow();
 
+const deviceTypeSelect = document.getElementById('deviceType');
+const autoRedirectRow = document.getElementById('autoRedirectRow');
+const APP_ROUTING_HINTS = {
+  windows: ['Windows: process name. Requires TUN.', 'One per line — process name, e.g. chrome.exe'],
+  macos: ['macOS: process name (no extension). Requires TUN.', 'One per line — process name, e.g. Google Chrome'],
+  linux: ['Linux: process name. Requires TUN.', 'One per line — process name, e.g. chrome'],
+  android: ['Android: package name, via the TUN inbound\'s native include/exclude_package — not a route rule. Requires TUN.', 'One per line — package name, e.g. com.android.chrome'],
+  ios: ['Not supported on iOS — sing-box confirms process/package matching does not work there at all (permanent limitation, not pending).', '']
+};
+function syncDeviceUI(){
+  const device = deviceTypeSelect.value;
+  autoRedirectRow.style.display = (device === 'linux') ? 'flex' : 'none';
+  const [hint, listHint] = APP_ROUTING_HINTS[device];
+  document.getElementById('appRoutingHint').textContent = hint;
+  document.getElementById('appRoutingListHint').textContent = listHint;
+  if(device === 'ios'){
+    appRoutingModeSelect.value = 'off';
+    appRoutingModeSelect.disabled = true;
+    syncAppRoutingRow();
+  } else {
+    appRoutingModeSelect.disabled = false;
+  }
+}
+deviceTypeSelect.addEventListener('change', ()=>{ syncDeviceUI(); renderTrace(); generate(); });
+syncDeviceUI();
+
 ['mixedAddr','mixedPort','mixedUser','mixedPass',
- 'tunName','tunAddr4','tunAddr6','tunMtu','tunStack','tunStrict','groupType','testUrl',
+ 'tunName','tunAddr4','tunAddr6','tunMtu','tunStack','tunStrict','tunAutoRedirect','groupType','testUrl',
  'bypassPrivate','bypassDomains','appRoutingList','hijackDns','fakeIp','enforceCert','blockAds','blockQuic','customDnsHost']
  .forEach(id=>{
    const el = document.getElementById(id);
@@ -559,6 +596,9 @@ function buildConfig(){
   const blockQuic = document.getElementById('blockQuic').checked;
   const bypassDomains = document.getElementById('bypassDomains').value.split('\n')
     .map(s => s.trim().toLowerCase().replace(/^\*?\./, '')).filter(Boolean);
+  const deviceType = document.getElementById('deviceType').value;
+  const appRoutingMode = document.getElementById('appRoutingMode').value;
+  const appRoutingApps = document.getElementById('appRoutingList').value.split('\n').map(s => s.trim()).filter(Boolean);
 
   // ---- inbounds ----
   const inbounds = [];
@@ -576,7 +616,7 @@ function buildConfig(){
     const addr4 = document.getElementById('tunAddr4').value.trim();
     const addr6 = document.getElementById('tunAddr6').value.trim();
     const address = [addr4, addr6].filter(Boolean);
-    inbounds.push({
+    const tunInbound = {
       type: 'tun', tag: 'tun-in',
       interface_name: document.getElementById('tunName').value || 'sing-tun',
       address,
@@ -584,7 +624,25 @@ function buildConfig(){
       auto_route: true,
       strict_route: document.getElementById('tunStrict').checked,
       stack: document.getElementById('tunStack').value
-    });
+    };
+    // auto_redirect is confirmed Linux + nftables only (sing-box's own TUN docs) — including
+    // it on any other platform does nothing but adds a field that doesn't belong there.
+    if(deviceType === 'linux' && document.getElementById('tunAutoRedirect').checked){
+      tunInbound.auto_redirect = true;
+    }
+    // Android has its own native per-app mechanism, distinct from the process_name route rule
+    // used on desktop: include_package/exclude_package directly on the TUN inbound, mapping to
+    // Android's VpnService addAllowedApplication/addDisallowedApplication — apps not included
+    // never reach the tunnel at the OS level, rather than being matched and redirected after
+    // the fact. Note: there's a confirmed sing-box bug report (SagerNet/sing-box#3387) where
+    // this doesn't fully restrict traffic in some root/command-line Android setups — it's the
+    // architecturally correct field, but not guaranteed airtight in every deployment.
+    if(deviceType === 'android' && appRoutingMode !== 'off' && appRoutingApps.length){
+      if(appRoutingMode === 'allow') tunInbound.include_package = appRoutingApps;
+      else tunInbound.exclude_package = appRoutingApps;
+      warnings.push('Android per-app routing uses include_package/exclude_package on the TUN inbound itself — this is the correct native mechanism, but sing-box has a confirmed open bug report (#3387) where it doesn\'t fully restrict traffic in some root/command-line setups. Test before relying on it.');
+    }
+    inbounds.push(tunInbound);
   }
 
   // ---- outbounds ----
@@ -605,7 +663,11 @@ function buildConfig(){
 
   // ---- route rules (order matches sing-box's own reference client config) ----
   const routeRules = [];
-  if(tunOn){
+  // Desktop platforms only: mobile OSes handle excluding the VPN app's own traffic natively
+  // (Android's VpnService.protect(), the iOS NetworkExtension model), so this manual rule
+  // would be redundant there — and Windows/macOS/Linux need different process names anyway
+  // (the .exe suffix is Windows-specific).
+  if(tunOn && (deviceType === 'windows' || deviceType === 'macos' || deviceType === 'linux')){
     // Defense-in-depth against a confirmed failure mode: `auto_detect_interface` (used below
     // to bind sing-box's own outbound connections to the real network interface) can fail to
     // detect correctly on some networks/platforms, with no automatic fallback of its own
@@ -614,23 +676,23 @@ function buildConfig(){
     // routing direct, unconditionally and first (before anything else runs), catches that
     // regardless of whether interface detection is working. Real-world precedent: production
     // sing-box configs (e.g. v2rayN's default template) include exactly this kind of rule.
-    routeRules.push({ process_name: ['sing-box', 'sing-box.exe', 'sing-box-client.exe'], outbound: 'direct' });
+    const selfNames = deviceType === 'windows'
+      ? ['sing-box.exe', 'sing-box-client.exe']
+      : ['sing-box', 'sing-box-client'];
+    routeRules.push({ process_name: selfNames, outbound: 'direct' });
   }
-  const appRoutingMode = document.getElementById('appRoutingMode').value;
-  const appRoutingApps = document.getElementById('appRoutingList').value.split('\n').map(s => s.trim()).filter(Boolean);
   let routeFinal = 'proxy';
-  if(appRoutingMode !== 'off' && appRoutingApps.length){
-    if(!tunOn) warnings.push('Per-app routing is set but TUN is off — process/package matching needs TUN\'s packet-level visibility. A SOCKS/HTTP proxy has no process info to match against, so this rule likely won\'t do anything without TUN enabled.');
-    // Populated into both fields regardless of which style of name was entered — process_name
-    // only matches on desktop, package_name only on Android, so whichever doesn't apply to a
-    // given platform simply never matches rather than causing an error either way.
+  // Android's per-app routing is handled entirely on the TUN inbound above (include_package/
+  // exclude_package) — it doesn't need or use a route rule at all, unlike desktop.
+  if(deviceType !== 'android' && deviceType !== 'ios' && appRoutingMode !== 'off' && appRoutingApps.length){
+    if(!tunOn) warnings.push('Per-app routing is set but TUN is off — process matching needs TUN\'s packet-level visibility. A SOCKS/HTTP proxy has no process info to match against, so this rule likely won\'t do anything without TUN enabled.');
     if(appRoutingMode === 'allow'){
       // Only listed apps get the proxy; everything else needs an explicit route to direct,
       // since it's no longer implied by "final" (which now points at direct instead).
-      routeRules.push({ process_name: appRoutingApps, package_name: appRoutingApps, outbound: 'proxy' });
+      routeRules.push({ process_name: appRoutingApps, outbound: 'proxy' });
       routeFinal = 'direct';
     } else {
-      routeRules.push({ process_name: appRoutingApps, package_name: appRoutingApps, outbound: 'direct' });
+      routeRules.push({ process_name: appRoutingApps, outbound: 'direct' });
     }
   }
   routeRules.push({ action: 'sniff' });
