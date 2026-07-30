@@ -26,6 +26,35 @@ output directory to `/`.
   (`sing-box.sagernet.org/manual/proxy/client/`). Unmatched traffic routes
   through the proxy group; if every proxy is unreachable, connections fail
   rather than silently going direct.
+- **Device (Windows/macOS/Linux/Android/iOS)** changes several things that
+  are genuinely platform-specific, not just labels:
+  - **Self-exclusion** (the rule that stops sing-box's own traffic from
+    looping back through its own tunnel) only applies on Windows/macOS/
+    Linux, with the right process name per platform (`sing-box.exe` on
+    Windows, `sing-box` — no extension — elsewhere). Skipped on Android/iOS,
+    since those platforms exclude the VPN app's own traffic natively
+    (Android's `VpnService.protect()`, the iOS NetworkExtension model) —
+    the manual rule would be redundant there.
+  - **`auto_redirect`** only appears as an option on Linux — confirmed
+    Linux + nftables only in sing-box's own TUN docs; it does nothing on
+    any other platform.
+  - **Per-app routing** uses a different mechanism per platform, not just a
+    different field name. Windows/macOS/Linux use a `process_name` route
+    rule (an allowlist switches `route.final` to `direct`; a denylist
+    leaves it on `proxy`). Android uses `include_package`/`exclude_package`
+    directly on the TUN inbound — sing-box's native mechanism, mapping to
+    Android's own `VpnService.addAllowedApplication`/
+    `addDisallowedApplication`, which excludes apps at the OS level before
+    packets reach sing-box's router at all, rather than matching and
+    redirecting them after the fact. There's a confirmed open sing-box bug
+    report (`SagerNet/sing-box#3387`) where this doesn't fully restrict
+    traffic in some root/command-line Android setups — it's the correct,
+    documented field, but not guaranteed airtight in every deployment, and
+    the generator surfaces that as a warning when you use it. **iOS
+    disables per-app routing entirely** — sing-box confirms process/package
+    matching doesn't work there at all, a permanent limitation rather than
+    something pending, so the control is disabled rather than silently
+    generating a rule that won't do anything.
 - **DNS:** an encrypted resolver (Cloudflare or Google DoH, or a custom IP)
   connected by its real hostname rather than a bare IP, resolved instantly
   via a static `hosts`-type DNS entry rather than a network round-trip —
@@ -41,7 +70,13 @@ output directory to `/`.
   gets its own independent cache (`independent_cache: true`, always on) —
   without it, an answer cached by one server can get wrongly reused when a
   different server should have answered a later query for the same domain,
-  a confirmed sing-box bug class that isn't specific to FakeIP.
+  a confirmed sing-box bug class that isn't specific to FakeIP. Bypass
+  domains resolve through a separate, plain-UDP, bare-IP resolver rather
+  than the encrypted one — DNS-based CDN routing picks the nearest edge
+  based on the resolver's location, not yours, so a domain you've
+  explicitly bypassed (already decided doesn't need privacy protection)
+  gets resolved geographically-accurately instead of through a foreign
+  encrypted resolver that could land you on the wrong CDN edge.
 - **Security:** certificate validation is enforced by default (any
   `insecure` flag a link tries to set gets stripped, with a visible warning
   either way), you'll get a warning if the mixed proxy is bound to a
@@ -60,22 +95,32 @@ output directory to `/`.
 
 ## Notes from a real-world config
 
-A few things here came directly from analyzing an actual production config
-(v2rayN's Windows client default template) rather than documentation alone:
-a single `mixed` inbound instead of separate SOCKS/HTTP ones, `hosts`-type
-static DNS resolution for the encrypted resolver's own hostname, the
-combined port/protocol `hijack-dns` rule, the QUIC-blocking option, the
-HTTPS/SVCB DNS short-circuit rule, always-on `independent_cache`, and the
-process-name self-protection rule described above.
+Most of this generator's DNS and route structure now directly mirrors an
+actual production config (v2rayN's Windows client default template) rather
+than documentation alone: a single `mixed` inbound instead of separate
+SOCKS/HTTP ones, `hosts`-type static DNS resolution for the encrypted
+resolver's own hostname, a dedicated plain-UDP DNS tier for bypass domains
+(matching its `direct_dns` pattern, for the CDN-locality reason explained
+above), the combined port/protocol `hijack-dns` rule, the QUIC-blocking
+option, the HTTPS/SVCB DNS short-circuit rule, always-on
+`independent_cache`, `store_fakeip: false` when FakeIP is on, and the
+process-name self-protection rule.
 
-One thing from that config deliberately *not* copied as-is: it uses
-`ip_accept_any` in a DNS rule to route general queries to its `hosts`
-server. That's real, documented syntax (confirmed against sing-box's own
-`hosts` server docs) — but it solves a different problem than what this
-generator needs. It's for intercepting arbitrary app queries about domains
-in the hosts table; this generator's hosts table only exists to bootstrap
-its own DNS servers' connections, which `domain_resolver` (set directly on
-those server entries) already handles on its own, narrower and simpler.
+Two deliberate deviations remain, both privacy-motivated rather than
+oversights:
+- `default_domain_resolver` (bootstraps your proxy server's own hostname,
+  if it's domain-based) stays on the *encrypted* resolver here, not the
+  plain-UDP one the reference config uses for this. There's no reason to
+  let even that one query go out in cleartext when keeping it encrypted
+  costs nothing extra.
+- That reference config uses `ip_accept_any` in a DNS rule to route general
+  app queries to its `hosts` server. That's real, documented syntax
+  (confirmed against sing-box's own `hosts` server docs) — but it solves a
+  different problem than this generator needs: intercepting arbitrary app
+  queries about domains in the hosts table. This generator's hosts table
+  only exists to bootstrap its own DNS servers' connections, which
+  `domain_resolver` (set directly on those server entries) already handles
+  on its own, narrower and simpler.
 
 ## If something isn't working
 
