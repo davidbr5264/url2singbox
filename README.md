@@ -124,6 +124,14 @@ oversights:
 
 ## If something isn't working
 
+**Fixed:** bypass domains and per-app routing entered in anything but the
+exact bare form (a pasted URL like `https://example.com/path`, a domain with
+a port, a full executable path) were silently producing rules that could
+never match anything — not a routing bug, an input-parsing gap. Both fields
+now clean their input properly (URLs → bare domain, paths → bare file name),
+and the generator tells you what it actually used whenever that cleanup
+changes something, so you can verify it did what you meant.
+
 Set `"log": {"level": "debug"}` in the downloaded config and check your
 sing-box client's log output. A real error line is worth far more than a
 guess from documentation — most config-shaped problems become obvious once
