@@ -195,7 +195,7 @@ trojan://password@host:443?sni=example.com#Backup"></textarea>
         <div class="ctl"><label class="switch"><input type="checkbox" id="bypassPrivate" checked><span class="slider"></span></label></div>
       </div>
       <div class="row" style="align-items:flex-start; flex-direction:column; gap:6px;">
-        <div style="width:100%;"><div class="lbl">Bypass domains</div><span class="hint">One per line — routed direct, subdomains included</span></div>
+        <div style="width:100%;"><div class="lbl">Bypass domains</div><span class="hint">One per line — routed direct, subdomains included. Full URLs are fine too (https://example.com/path → example.com)</span></div>
         <textarea id="bypassDomains" style="min-height:56px; width:100%;" placeholder="cn
 internal.corp.com"></textarea>
       </div>
@@ -290,6 +290,24 @@ function b64decode(str){
 function qsToObj(search){ const o = {}; new URLSearchParams(search).forEach((v,k)=>{ o[k.toLowerCase()] = v; }); return o; }
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function esc(s){ return (s+'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+// Bypass-domain input is very commonly a pasted URL, not a bare domain — "https://example.com/path"
+// or "example.com:443" typed straight from a browser's address bar. A literal domain_suffix entry
+// like "https://example.com/" will never match a real sniffed domain ("example.com"), so this was a
+// real, confirmed bug: bypass domains silently doing nothing whenever entered as anything but the
+// exact bare form. This strips protocol prefixes, any path/query/fragment, a port suffix, and a
+// leading/trailing dot or wildcard, leaving just the bare domain in every case that's practically
+// distinguishable from typing it correctly.
+function cleanDomain(raw){
+  let s = raw.trim().toLowerCase();
+  if(!s) return '';
+  s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//, '');   // strip a scheme, e.g. https://, socks5://
+  s = s.replace(/^\*?\./, '');                     // strip a leading wildcard/dot, e.g. *.example.com
+  s = s.split(/[\/?#]/)[0];                        // strip any path, query string, or fragment
+  s = s.replace(/:\d+$/, '');                      // strip a trailing port, e.g. example.com:443
+  s = s.replace(/\.$/, '');                        // strip a trailing dot (a valid but unusual FQDN form)
+  return s;
+}
 
 function buildTLS(p, host){
   const security = (p.security || '').toLowerCase();
@@ -550,9 +568,9 @@ syncAppRoutingRow();
 const deviceTypeSelect = document.getElementById('deviceType');
 const autoRedirectRow = document.getElementById('autoRedirectRow');
 const APP_ROUTING_HINTS = {
-  windows: ['Windows: process name. Requires TUN.', 'One per line — process name, e.g. chrome.exe'],
-  macos: ['macOS: process name (no extension). Requires TUN.', 'One per line — process name, e.g. Google Chrome'],
-  linux: ['Linux: process name. Requires TUN.', 'One per line — process name, e.g. chrome'],
+  windows: ['Windows: process name. Requires TUN.', 'One per line — bare name, e.g. chrome.exe (a full path is fine too, just the file name gets used)'],
+  macos: ['macOS: process name (no extension). Requires TUN.', 'One per line — bare name, e.g. Google Chrome (a full path is fine too, just the file name gets used)'],
+  linux: ['Linux: process name. Requires TUN.', 'One per line — bare name, e.g. chrome (a full path is fine too, just the file name gets used)'],
   android: ['Android: package name, via the TUN inbound\'s native include/exclude_package — not a route rule. Requires TUN.', 'One per line — package name, e.g. com.android.chrome'],
   ios: ['Not supported on iOS — sing-box confirms process/package matching does not work there at all (permanent limitation, not pending).', '']
 };
@@ -594,11 +612,20 @@ function buildConfig(){
   const enforceCert = document.getElementById('enforceCert').checked;
   const blockAds = document.getElementById('blockAds').checked;
   const blockQuic = document.getElementById('blockQuic').checked;
-  const bypassDomains = document.getElementById('bypassDomains').value.split('\n')
-    .map(s => s.trim().toLowerCase().replace(/^\*?\./, '')).filter(Boolean);
+  const bypassDomainsRaw = document.getElementById('bypassDomains').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const bypassPairs = bypassDomainsRaw.map(raw => ({ raw, clean: cleanDomain(raw) })).filter(p => p.clean);
+  const bypassDomains = bypassPairs.map(p => p.clean);
+  if(bypassPairs.some(p => p.raw.toLowerCase() !== p.clean)){
+    warnings.push('Bypass domains were cleaned up before use — e.g. a pasted URL becomes just its bare domain. Using: ' + bypassDomains.join(', '));
+  }
   const deviceType = document.getElementById('deviceType').value;
   const appRoutingMode = document.getElementById('appRoutingMode').value;
-  const appRoutingApps = document.getElementById('appRoutingList').value.split('\n').map(s => s.trim()).filter(Boolean);
+  // A full path (e.g. "C:\Program Files\...\chrome.exe" or "/usr/bin/firefox") is a natural thing
+  // to paste, but process_name matches the bare executable name, not a path — a pasted path would
+  // otherwise never match anything. Package names (Android) never contain a path separator, so this
+  // is a no-op for those.
+  const appRoutingApps = document.getElementById('appRoutingList').value.split('\n')
+    .map(s => s.trim().split(/[\\/]/).pop()).filter(Boolean);
 
   // ---- inbounds ----
   const inbounds = [];
