@@ -1,291 +1,306 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Xray Config Generator</title>
-    <style>
-        :root {
-            --bg-color: #f4f4f9;
-            --container-bg: #ffffff;
-            --text-main: #333333;
-            --accent: #0066cc;
-            --accent-hover: #004c99;
-            --border: #cccccc;
-        }
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            display: flex;
-            justify-content: center;
-            padding: 2rem;
-            margin: 0;
-        }
-        .container {
-            background: var(--container-bg);
-            padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            width: 100%;
-            max-width: 600px;
-        }
-        h1 {
-            margin-top: 0;
-            font-size: 1.5rem;
-        }
-        label {
-            display: block;
-            margin-top: 1rem;
-            font-weight: bold;
-        }
-        textarea, input {
-            width: 100%;
-            padding: 0.75rem;
-            margin-top: 0.5rem;
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            box-sizing: border-box;
-            font-family: monospace;
-        }
-        textarea {
-            resize: vertical;
-        }
-        button {
-            margin-top: 1.5rem;
-            width: 100%;
-            padding: 1rem;
-            background-color: var(--accent);
-            color: white;
-            border: none;
-            border-radius: 4px;
-            font-size: 1rem;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        button:hover {
-            background-color: var(--accent-hover);
-        }
-        .help-text {
-            font-size: 0.85rem;
-            color: #666;
-            margin-top: 0.25rem;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vless → sing-box · config forge</title>
+<meta name="description" content="Convert vless:// links into hardened sing-box client configs for Windows. Runs entirely in your browser — nothing is uploaded.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 rx=%225%22 fill=%22%230b0e14%22/><path d=%22M4 12h4l2-6 4 12 2-6h4%22 stroke=%22%233ddc97%22 stroke-width=%222%22 fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<div class="container">
-    <h1>VLESS to Xray Config (Windows)</h1>
-    
-    <label for="vlessUrl">VLESS Share Link</label>
-    <textarea id="vlessUrl" rows="4" placeholder="vless://UUID@hostname:port?encryption=none&..."></textarea>
-    <div class="help-text">Paste your standard VLESS URI here.</div>
+<div class="noise" aria-hidden="true"></div>
 
-    <label for="directDomains">Direct Routed Domains</label>
-    <textarea id="directDomains" rows="3" placeholder="example.com, mycompany.net"></textarea>
-    <div class="help-text">Comma or newline-separated domains to bypass the proxy.</div>
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M2 12h4.5l2.5-7 5 14 2.5-7H22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="brand-text">config<span class="brand-accent">forge</span></span>
+    </div>
+    <div class="top-meta">
+      <span class="pill">runs in your browser</span>
+      <span class="pill pill-target">target: sing-box · windows</span>
+    </div>
+  </div>
+</header>
 
-    <button onclick="generateConfig()">Download config.json</button>
-</div>
+<main class="shell">
 
-<script>
-    // The provided template with securely configured DoH and routing defaults
-    const template = {
-      "log": { "loglevel": "warning" },
-      "dns": {
-        "hosts": {
-          "dns.google": ["8.8.8.8", "8.8.4.4", "2001:4860:4860::8888", "2001:4860:4860::8844"],
-          "dns.alidns.com": ["223.5.5.5", "223.6.6.6", "2400:3200::1", "2400:3200:baba::1"],
-          "one.one.one.one": ["1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001"],
-          "1dot1dot1dot1.cloudflare-dns.com": ["1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001"],
-          "cloudflare-dns.com": ["104.16.249.249", "104.16.248.249", "2606:4700::6810:f8f9", "2606:4700::6810:f9f9"],
-          "dns.cloudflare.com": ["162.159.61.8", "172.64.41.8", "2a06:98c1:52::8", "2803:f800:53::8"],
-          "dot.pub": ["1.12.12.12", "120.53.53.53"],
-          "doh.pub": ["1.12.12.12", "120.53.53.53"],
-          "dns.quad9.net": ["9.9.9.9", "149.112.112.112", "2620:fe::fe", "2620:fe::9"],
-          "dns.yandex.net": ["77.88.8.8", "77.88.8.1", "2a02:6b8::feed:0ff", "2a02:6b8:0:1::feed:0ff"],
-          "dns.sb": ["45.11.45.11", "185.222.222.222", "2a09::", "2a11::"],
-          "dns.umbrella.com": ["208.67.220.220", "208.67.222.222", "2620:119:35::35", "2620:119:53::53"],
-          "dns.sse.cisco.com": ["208.67.220.220", "208.67.222.222", "2620:119:35::35", "2620:119:53::53"],
-          "engage.cloudflareclient.com": ["162.159.192.1", "2606:4700:d0::a29f:c001"]
-        },
-        "servers": [
-          { "address": "119.29.29.29", "domains": ["geosite:private"], "skipFallback": true, "tag": "direct-dns-1" },
-          { "address": "119.29.29.29", "domains": ["full:cloudflare-dns.com"], "skipFallback": true },
-          "https://cloudflare-dns.com/dns-query"
-        ],
-        "tag": "dns-module"
-      },
-      "inbounds": [
-        {
-          "tag": "socks",
-          "port": 10808,
-          "listen": "127.0.0.1",
-          "protocol": "mixed",
-          "sniffing": {
-            "enabled": true,
-            "destOverride": ["http", "tls"],
-            "routeOnly": false
-          },
-          "settings": { "auth": "noauth", "udp": true, "allowTransparent": false }
-        }
-      ],
-      "outbounds": [
-        {
-          "tag": "proxy",
-          "protocol": "vless",
-          "settings": {
-            "vnext": [
-              {
-                "address": "",
-                "port": 443,
-                "users": [
-                  {
-                    "id": "",
-                    "email": "t@t.tt",
-                    "security": "auto",
-                    "encryption": "none",
-                    "flow": ""
-                  }
-                ]
-              }
-            ]
-          },
-          "streamSettings": {
-            "network": "raw",
-            "security": "reality",
-            "realitySettings": {
-              "serverName": "",
-              "fingerprint": "chrome",
-              "show": false,
-              "publicKey": "",
-              "shortId": "",
-              "spiderX": "/",
-              "mldsa65Verify": ""
-            }
-          },
-          "mux": { "enabled": false, "concurrency": -1 }
-        },
-        { "tag": "direct", "protocol": "freedom" },
-        { "tag": "block", "protocol": "blackhole" }
-      ],
-      "routing": {
-        "domainStrategy": "AsIs",
-        "rules": [
-          { "type": "field", "port": "443", "network": "udp", "outboundTag": "block" },
-          { "type": "field", "outboundTag": "direct", "ip": ["geoip:private"] },
-          { "type": "field", "outboundTag": "direct", "domain": ["geosite:private"] },
-          // Placeholder for dynamic direct domains inserted via user input
-          { "type": "field", "port": "0-65535", "outboundTag": "proxy" },
-          { "type": "field", "inboundTag": ["direct-dns-1"], "outboundTag": "direct" },
-          { "type": "field", "inboundTag": ["dns-module"], "outboundTag": "proxy" }
-        ]
-      }
-    };
+  <section class="intro">
+    <p class="eyebrow">vless:// → config.json</p>
+    <h1>Turn a share link into a hardened client config.</h1>
+    <p class="lede">Paste one or more <code>vless://</code> links. Config Forge builds a sing-box config for the Windows client — TUN inbound, DNS over HTTPS routed through your own proxy, and a fail-closed route table — using the same shape as a v2rayN-generated config. Nothing leaves this tab: the conversion runs locally in JavaScript.</p>
+  </section>
 
-    function generateConfig() {
-        const vlessInput = document.getElementById('vlessUrl').value.trim();
-        const domainsInput = document.getElementById('directDomains').value;
-        
-        if (!vlessInput || !vlessInput.startsWith('vless://')) {
-            alert('Please enter a valid vless:// URI.');
-            return;
-        }
+  <!-- SIGNAL PATH — signature element -->
+  <section class="signal-path" id="signalPath" aria-label="Connection path status">
+    <div class="path-track">
+      <div class="path-node" data-node="link" data-state="idle">
+        <span class="node-dot"></span>
+        <span class="node-label">link</span>
+      </div>
+      <div class="path-wire" data-wire="1"><span class="wire-pulse"></span></div>
+      <div class="path-node" data-node="tls" data-state="idle">
+        <span class="node-dot"></span>
+        <span class="node-label">tls / reality</span>
+      </div>
+      <div class="path-wire" data-wire="2"><span class="wire-pulse"></span></div>
+      <div class="path-node" data-node="dns" data-state="idle">
+        <span class="node-dot"></span>
+        <span class="node-label">doh dns</span>
+      </div>
+      <div class="path-wire" data-wire="3"><span class="wire-pulse"></span></div>
+      <div class="path-node" data-node="route" data-state="idle">
+        <span class="node-dot"></span>
+        <span class="node-label">route</span>
+      </div>
+      <div class="path-wire" data-wire="4"><span class="wire-pulse"></span></div>
+      <div class="path-node" data-node="out" data-state="idle">
+        <span class="node-dot"></span>
+        <span class="node-label">config.json</span>
+      </div>
+    </div>
+  </section>
 
-        try {
-            // Deep clone the template
-            const config = JSON.parse(JSON.stringify(template));
-            
-            // Parse VLESS URI
-            // Example format: vless://UUID@hostname:port?type=tcp&security=reality&pbk=KEY&sni=SNI...
-            const urlObj = new URL(vlessInput);
-            const params = new URLSearchParams(urlObj.search);
-            
-            // Extract core node info
-            const uuid = urlObj.username;
-            const address = urlObj.hostname;
-            const port = parseInt(urlObj.port) || 443;
-            
-            // Extract specific query parameters
-            const flow = params.get('flow') || '';
-            const encryption = params.get('encryption') || 'none';
-            const network = params.get('type') || 'raw';
-            const security = params.get('security') || 'reality';
-            const sni = params.get('sni') || '';
-            const fp = params.get('fp') || 'chrome';
-            const pbk = params.get('pbk') || '';
-            const sid = params.get('sid') || '';
-            const spx = params.get('spx') || params.get('spiderX') || '/';
+  <div class="workspace">
 
-            // Map to config outbound
-            const outbound = config.outbounds[0];
-            const vnext = outbound.settings.vnext[0];
-            
-            vnext.address = address;
-            vnext.port = port;
-            vnext.users[0].id = uuid;
-            vnext.users[0].encryption = encryption;
-            vnext.users[0].flow = flow;
+    <!-- LEFT: INPUT + OPTIONS -->
+    <section class="panel input-panel">
 
-            outbound.streamSettings.network = network;
-            outbound.streamSettings.security = security;
-            
-            if (security === 'reality') {
-                outbound.streamSettings.realitySettings = {
-                    serverName: sni,
-                    fingerprint: fp,
-                    show: false,
-                    publicKey: pbk,
-                    shortId: sid,
-                    spiderX: spx,
-                    mldsa65Verify: ""
-                };
-            } else {
-                delete outbound.streamSettings.realitySettings;
-            }
+      <div class="panel-head">
+        <h2>01 · links</h2>
+        <span class="panel-sub">one per line</span>
+      </div>
 
-            // Handle custom direct domains
-            if (domainsInput.trim()) {
-                const domainList = domainsInput
-                    .split(/[\n,]+/)
-                    .map(d => d.trim())
-                    .filter(d => d.length > 0);
-                
-                if (domainList.length > 0) {
-                    const customRule = {
-                        "type": "field",
-                        "outboundTag": "direct",
-                        "domain": domainList
-                    };
-                    // Insert right before the global 0-65535 proxy rule
-                    const proxyRuleIndex = config.routing.rules.findIndex(r => r.port === "0-65535" && r.outboundTag === "proxy");
-                    if (proxyRuleIndex > -1) {
-                        config.routing.rules.splice(proxyRuleIndex, 0, customRule);
-                    } else {
-                        config.routing.rules.unshift(customRule);
-                    }
-                }
-            }
+      <textarea id="vlessInput" class="link-input" rows="5" spellcheck="false"
+        placeholder="vless://uuid@server:443?security=reality&type=tcp&flow=xtls-rprx-vision&pbk=...&sid=...&sni=...#My-Server"></textarea>
 
-            // Export logic
-            const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
-            const downloadUrl = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = downloadUrl;
-            a.download = 'config.json';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(downloadUrl);
+      <div class="input-row">
+        <button id="parseBtn" class="btn btn-primary">parse links</button>
+        <button id="sampleBtn" class="btn btn-ghost">load sample</button>
+        <span id="parseStatus" class="parse-status"></span>
+      </div>
 
-        } catch (e) {
-            alert('Failed to parse the URI. Ensure it follows standard VLESS share link formatting.');
-            console.error(e);
-        }
-    }
-</script>
+      <div id="linkResults" class="link-results" aria-live="polite"></div>
 
+      <div class="panel-head panel-head-spaced">
+        <h2>02 · options</h2>
+        <span class="panel-sub">hardened defaults — edit if needed</span>
+      </div>
+
+      <div class="options-grid">
+
+        <fieldset class="opt-group">
+          <legend>DNS &amp; privacy</legend>
+
+          <label class="field">
+            <span class="field-label">Remote resolver (DNS‑over‑HTTPS, tunneled through proxy)</span>
+            <select id="optRemoteDns">
+              <option value="cloudflare" selected>Cloudflare — cloudflare-dns.com</option>
+              <option value="google">Google — dns.google</option>
+              <option value="quad9">Quad9 — dns.quad9.net</option>
+              <option value="alidns">AliDNS — dns.alidns.com</option>
+              <option value="custom">Custom domain…</option>
+            </select>
+          </label>
+          <input type="text" id="optRemoteDnsCustom" class="field-sub" placeholder="doh.example.com" hidden>
+
+          <label class="field">
+            <span class="field-label">Local / direct resolver (for LAN &amp; direct domains)</span>
+            <select id="optLocalDns">
+              <option value="119.29.29.29">119.29.29.29 — DNSPod</option>
+              <option value="223.5.5.5">223.5.5.5 — AliDNS</option>
+              <option value="system" selected>System default</option>
+              <option value="custom">Custom IP…</option>
+            </select>
+          </label>
+          <input type="text" id="optLocalDnsCustom" class="field-sub" placeholder="10.0.0.1" hidden>
+
+          <label class="toggle">
+            <input type="checkbox" id="optBlockQuic" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-text">Block UDP/443 (QUIC)<small>stops traffic bypassing the proxy over HTTP/3</small></span>
+          </label>
+
+          <label class="toggle">
+            <input type="checkbox" id="optBlockIpv6" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-text">Reject IPv6<small>adds an IPv6 TUN address so v6 traffic is actually captured, then dropped — off leaves it unrouted and on the physical adapter</small></span>
+          </label>
+        </fieldset>
+
+        <fieldset class="opt-group">
+          <legend>TUN interface</legend>
+
+          <label class="field">
+            <span class="field-label">Interface name</span>
+            <input type="text" id="optTunName" value="singbox_tun">
+          </label>
+          <label class="field">
+            <span class="field-label">Address (CIDR)</span>
+            <input type="text" id="optTunAddr" value="172.18.0.1/30">
+          </label>
+          <label class="field field-inline">
+            <span class="field-label">MTU</span>
+            <input type="number" id="optTunMtu" value="9000">
+          </label>
+          <label class="field">
+            <span class="field-label">Stack</span>
+            <select id="optTunStack">
+              <option value="gvisor" selected>gvisor — safest, most compatible</option>
+              <option value="mixed">mixed</option>
+              <option value="system">system — fastest, needs WinTun</option>
+            </select>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="optStrictRoute" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-text">Strict route<small>forces all system traffic into the TUN, even off-subnet</small></span>
+          </label>
+        </fieldset>
+
+        <fieldset class="opt-group">
+          <legend>Local inbounds</legend>
+
+          <label class="toggle">
+            <input type="checkbox" id="optSocksEnable" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-text">SOCKS/HTTP mixed inbound<small>for apps that don't use the system proxy</small></span>
+          </label>
+          <label class="field field-inline" id="socksPortRow">
+            <span class="field-label">Port</span>
+            <input type="number" id="optSocksPort" value="10808">
+          </label>
+
+          <label class="toggle">
+            <input type="checkbox" id="optClashApi" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-text">Clash API<small>for GUI clients (v2rayN tray, yacd, etc.) — bound to localhost</small></span>
+          </label>
+          <label class="field field-inline" id="clashPortRow">
+            <span class="field-label">Port</span>
+            <input type="number" id="optClashPort" value="10814">
+          </label>
+          <label class="field" id="clashSecretRow">
+            <span class="field-label">API secret <small>(recommended if exposing beyond localhost)</small></span>
+            <input type="text" id="optClashSecret" placeholder="leave blank for none">
+          </label>
+        </fieldset>
+
+        <fieldset class="opt-group">
+          <legend>Rule sets &amp; misc</legend>
+
+          <label class="field">
+            <span class="field-label">geosite-private rule-set source</span>
+            <select id="optRuleSetMode">
+              <option value="remote">Auto-download (SagerNet, recommended)</option>
+              <option value="local" selected>Local file on disk</option>
+            </select>
+          </label>
+          <input type="text" id="optRuleSetPath" class="field-sub"
+                 value="C:\\sing-box\\geosite-private.srs">
+
+          <label class="field">
+            <span class="field-label">Log level</span>
+            <select id="optLogLevel">
+              <option value="warn" selected>warn</option>
+              <option value="info">info</option>
+              <option value="debug">debug</option>
+              <option value="error">error</option>
+            </select>
+          </label>
+
+          <label class="toggle">
+            <input type="checkbox" id="optCacheFile" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-text">DNS cache file<small>persists fakeip/cache across restarts, kept next to config.json</small></span>
+          </label>
+        </fieldset>
+
+        <fieldset class="opt-group opt-group-wide">
+          <legend>Bypass domains <span class="legend-note">— sent direct, not through the proxy</span></legend>
+
+          <label class="field">
+            <span class="field-label">One per line. Matches the domain and its subdomains by default.</span>
+            <textarea id="optBypassDomains" class="bypass-input" rows="4" spellcheck="false"
+              placeholder="example.com&#10;.internal.corp.example&#10;keyword:analytics&#10;regex:^ads\."></textarea>
+            <span class="field-label field-label-hint">
+              Prefix a line with <code>.</code> or <code>*.</code> to match subdomains only (not the bare domain) ·
+              <code>keyword:</code> for a substring match · <code>regex:</code> for a regular expression ·
+              full URLs are cleaned to a bare hostname automatically
+            </span>
+          </label>
+        </fieldset>
+
+        <fieldset class="opt-group opt-group-wide">
+          <legend>Bypass applications <span class="legend-note">— those apps' traffic sent direct, by process name</span></legend>
+
+          <label class="field">
+            <span class="field-label">One Windows executable per line.</span>
+            <textarea id="optBypassApps" class="bypass-input" rows="3" spellcheck="false"
+              placeholder="steam.exe&#10;EpicGamesLauncher.exe&#10;C:\Program Files\App\app.exe"></textarea>
+            <span class="field-label field-label-hint">
+              Matches by process name (e.g. <code>steam.exe</code>) — a full path is fine too, only the
+              filename is used. Useful for apps that break under a VPN/TUN, like games with anti-cheat
+              or LAN-discovery tools.
+            </span>
+          </label>
+        </fieldset>
+
+      </div>
+    </section>
+
+    <!-- RIGHT: OUTPUT -->
+    <section class="panel output-panel">
+      <div class="panel-head">
+        <h2>03 · config.json</h2>
+        <div class="output-actions">
+          <button id="copyBtn" class="btn btn-ghost btn-sm" disabled>copy</button>
+          <button id="downloadBtn" class="btn btn-primary btn-sm" disabled>download config.json</button>
+        </div>
+      </div>
+
+      <div id="warnings" class="warnings" hidden></div>
+
+      <pre id="output" class="output-code"><code id="outputCode">// parse a link on the left to generate a config here</code></pre>
+    </section>
+
+  </div>
+
+  <section class="notes">
+    <h2>reading the output</h2>
+    <div class="notes-grid">
+      <div class="note">
+        <h3>DNS never leaks in the clear</h3>
+        <p>Remote lookups go out as DoH, and that DoH request is itself sent through the <code>proxy</code> outbound — your resolver sees the proxy server, never your ISP. Direct/LAN domains use the local resolver over plain UDP so split-horizon and captive portals still work.</p>
+      </div>
+      <div class="note">
+        <h3>Fail closed, not fail open</h3>
+        <p><code>route.final</code> is <code>proxy</code>. Anything not explicitly matched to <code>direct</code> — private IPs and the geosite-private set — goes through the tunnel. If the tunnel is down, it fails, it doesn't silently fall back to your real IP.</p>
+      </div>
+      <div class="note">
+        <h3>Two common leak paths, closed by default</h3>
+        <p>QUIC (UDP/443) can carry HTTP/3 straight past a TCP-only proxy path; it's rejected. IPv6 isn't captured by the IPv4-only TUN address here, so it's rejected too rather than left to route unprotected — both are toggles above if you'd rather handle them differently.</p>
+      </div>
+      <div class="note">
+        <h3>Windows paths</h3>
+        <p>This build targets the Windows sing-box client: <code>experimental.cache_file.path</code> and the rule-set path (if you choose local rule-sets) use Windows-style paths. Point the rule-set path at wherever your sing-box install keeps its <code>.srs</code> files, or leave it on auto-download.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <p>Client-side only — your links, UUIDs, and keys are never transmitted anywhere. Verify with <code>sing-box check -c config.json</code> before relying on it.</p>
+  </footer>
+
+</main>
+
+<script src="app.js"></script>
 </body>
 </html>

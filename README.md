@@ -1,177 +1,142 @@
-# sing-box Client Config Generator
+# Config Forge — vless:// → sing-box (Windows)
 
-A single static HTML file. Paste `vless://`, `vmess://`, `trojan://`, `ss://`,
-`hysteria2://`/`hy2://`, or `tuic://` share links and get a ready client
-config with a mixed SOCKS/HTTP proxy and/or TUN inbound. Everything runs
-client-side in the browser; nothing is uploaded anywhere.
+A static, client-side tool that turns one or more `vless://` share links into a
+hardened `config.json` for the [sing-box](https://sing-box.sagernet.org) core
+on Windows. Nothing is uploaded anywhere — parsing and config generation run
+entirely in the browser tab.
+
+## What it builds
+
+- **TUN inbound** (`strict_route`, `gvisor` stack by default) + optional local
+  SOCKS/HTTP mixed inbound.
+- **DNS over HTTPS** for remote resolution, tunneled through your own proxy
+  outbound (`detour: proxy`), with a `hosts`-type bootstrap so the resolver's
+  own hostname never leaks over plaintext DNS. Local/direct resolution
+  defaults to the OS's own resolver (sing-box's `local` DNS server type) —
+  matching what your browser gets with no proxy at all — or a specific
+  IP if you set one.
+- **Fail-closed routing**: `route.final` is your proxy outbound. Only private
+  IPs and the `geosite-private` rule-set go direct — everything else is
+  tunneled or dropped, never silently sent out in the clear. `geosite-private`
+  defaults to a local file at `C:\sing-box\geosite-private.srs`; switch the
+  dropdown to auto-download if you'd rather not manage that file yourself.
+- **Leak-path closers** (toggleable): reject UDP/443 (QUIC) so HTTP/3 can't
+  route around a TCP-only path, and reject IPv6 since the TUN address here is
+  IPv4-only.
+- **VLESS parsing**: `security` (none/tls/reality), `flow` (xtls-rprx-vision),
+  transports (`tcp`, `ws` incl. early-data, `grpc`, `http`, `httpupgrade`),
+  uTLS fingerprint, ALPN, Reality `pbk`/`sid`. Multiple links generate a
+  `selector` outbound so you can flip between servers.
+- **Bypass domains**: a plain list of domains that should skip the proxy —
+  applied to both DNS resolution and routing, evaluated before
+  `geosite-private`. One per line; a bare domain matches itself and its
+  subdomains, a leading `.` matches subdomains only, and `keyword:`/`regex:`
+  prefixes give substring/regex matching.
+- **Bypass applications**: a list of Windows executables (`steam.exe`, or a
+  full path — only the file name is used) whose traffic is sent direct via
+  `process_name` matching, for apps that break under a VPN/TUN (games with
+  anti-cheat, LAN-discovery tools, etc). Applied to both DNS and routing,
+  independent of the bypass-domain rule.
+
+## Run it locally
+
+No build step — it's plain HTML/CSS/JS.
+
+```bash
+cd vless2singbox
+python3 -m http.server 8080
+# open http://localhost:8080
+```
 
 ## Deploy to Cloudflare Pages
 
-**Direct Upload:** Workers & Pages → Create → Pages → Upload assets → upload
-this folder. No build command needed.
+**Option A — dashboard, no git required**
+1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
+   **Upload assets**.
+2. Drag in this folder's contents (`index.html`, `style.css`, `app.js`,
+   `_headers`).
+3. Deploy. You'll get a `*.pages.dev` URL immediately.
 
-**Git integration:** connect the repo, leave the build command empty, set
-output directory to `/`.
+**Option B — git-connected (auto-deploys on push)**
+1. Push this folder to a GitHub/GitLab repo.
+2. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
+   **Connect to Git** → pick the repo.
+3. Build settings: **Framework preset: None**, **Build command: (empty)**,
+   **Build output directory: /**.
+4. Deploy.
 
-## What it generates
+**Option C — Wrangler CLI**
+```bash
+npm install -g wrangler
+wrangler pages deploy . --project-name=config-forge
+```
 
-- **Inbounds:** a `mixed` proxy (SOCKS + HTTP on one port, loopback by
-  default, optional auth) and/or TUN (configurable address, MTU, stack,
-  `strict_route`).
-- **Outbounds:** one per parsed proxy link, grouped under a `urltest`
-  (auto-failover) or `selector` (manual) outbound, plus `direct`.
-- **Routing:** `sniff` → `hijack-dns` (matching by port *or* sniffed
-  protocol, combined via a `logical`/`or` rule) → private-IP bypass →
-  bypass-domain list, matching sing-box's own reference client config
-  (`sing-box.sagernet.org/manual/proxy/client/`). Unmatched traffic routes
-  through the proxy group; if every proxy is unreachable, connections fail
-  rather than silently going direct.
-- **Device (Windows/macOS/Linux/Android/iOS)** changes several things that
-  are genuinely platform-specific, not just labels:
-  - **Self-exclusion** (the rule that stops sing-box's own traffic from
-    looping back through its own tunnel) only applies on Windows/macOS/
-    Linux, with the right process name per platform (`sing-box.exe` on
-    Windows, `sing-box` — no extension — elsewhere). Skipped on Android/iOS,
-    since those platforms exclude the VPN app's own traffic natively
-    (Android's `VpnService.protect()`, the iOS NetworkExtension model) —
-    the manual rule would be redundant there.
-  - **`auto_redirect`** only appears as an option on Linux — confirmed
-    Linux + nftables only in sing-box's own TUN docs; it does nothing on
-    any other platform.
-  - **Per-app routing** uses a different mechanism per platform, not just a
-    different field name. Windows/macOS/Linux use a `process_name` route
-    rule (an allowlist switches `route.final` to `direct`; a denylist
-    leaves it on `proxy`). Android uses `include_package`/`exclude_package`
-    directly on the TUN inbound — sing-box's native mechanism, mapping to
-    Android's own `VpnService.addAllowedApplication`/
-    `addDisallowedApplication`, which excludes apps at the OS level before
-    packets reach sing-box's router at all, rather than matching and
-    redirecting them after the fact. There's a confirmed open sing-box bug
-    report (`SagerNet/sing-box#3387`) where this doesn't fully restrict
-    traffic in some root/command-line Android setups — it's the correct,
-    documented field, but not guaranteed airtight in every deployment, and
-    the generator surfaces that as a warning when you use it. **iOS
-    disables per-app routing entirely** — sing-box confirms process/package
-    matching doesn't work there at all, a permanent limitation rather than
-    something pending, so the control is disabled rather than silently
-    generating a rule that won't do anything.
-- **DNS:** an encrypted resolver (Cloudflare or Google DoH, or a custom IP)
-  connected by its real hostname rather than a bare IP, resolved instantly
-  via a static `hosts`-type DNS entry rather than a network round-trip —
-  sidesteps any question of whether a provider's certificate covers a raw
-  IP as a SAN. The same resolver bootstraps your proxy server's own
-  hostname too, deliberately not using sing-box's special `"local"` DNS
-  type, which has a confirmed loop bug combined with TUN + hijack-dns +
-  FakeIP. FakeIP itself is optional; `sniff` + `hijack-dns` alone already
-  give domain-based routing without it. HTTPS/SVCB DNS record queries
-  (connection-upgrade hints some browsers send) get a short-circuited empty
-  response rather than being resolved normally, which is safe and avoids
-  them behaving unpredictably — particularly under FakeIP. Each DNS server
-  gets its own independent cache (`independent_cache: true`, always on) —
-  without it, an answer cached by one server can get wrongly reused when a
-  different server should have answered a later query for the same domain,
-  a confirmed sing-box bug class that isn't specific to FakeIP. Bypass
-  domains resolve through a separate, plain-UDP, bare-IP resolver rather
-  than the encrypted one — DNS-based CDN routing picks the nearest edge
-  based on the resolver's location, not yours, so a domain you've
-  explicitly bypassed (already decided doesn't need privacy protection)
-  gets resolved geographically-accurately instead of through a foreign
-  encrypted resolver that could land you on the wrong CDN edge.
-- **Security:** certificate validation is enforced by default (any
-  `insecure` flag a link tries to set gets stripped, with a visible warning
-  either way), you'll get a warning if the mixed proxy is bound to a
-  non-loopback address with no auth set, and there are optional DNS-level
-  ad/tracker blocking and QUIC-blocking (forces TCP fallback, since QUIC —
-  UDP:443 — is a second way traffic can misbehave under a tunnel, same
-  category of issue as unencrypted DNS bypassing it) toggles.
-- **TUN self-protection:** when TUN is on, the very first route rule —
-  before `sniff`, before anything else — matches sing-box's own process
-  name and routes it direct, unconditionally. This is defense-in-depth
-  against a confirmed failure mode where `auto_detect_interface` (used to
-  bind sing-box's own connections to the real network interface) fails to
-  detect correctly on some networks/platforms, with no fallback of its own
-  (`SagerNet/sing-box#1502`, `#3440`) — when that happens, sing-box's own
-  traffic can get recaptured by its own tunnel instead of escaping it.
+The `_headers` file ships a Content-Security-Policy that blocks all outbound
+`connect-src` — a safety net confirming the page can't phone home even by
+accident, since it never needs to.
 
-## Notes from a real-world config
+## sing-box version notes
 
-Most of this generator's DNS and route structure now directly mirrors an
-actual production config (v2rayN's Windows client default template) rather
-than documentation alone: a single `mixed` inbound instead of separate
-SOCKS/HTTP ones, `hosts`-type static DNS resolution for the encrypted
-resolver's own hostname, a dedicated plain-UDP DNS tier for bypass domains
-(matching its `direct_dns` pattern, for the CDN-locality reason explained
-above), the combined port/protocol `hijack-dns` rule, the QUIC-blocking
-option, the HTTPS/SVCB DNS short-circuit rule, always-on
-`independent_cache`, `store_fakeip: false` when FakeIP is on, and the
-process-name self-protection rule.
+Checked against sing-box stable (1.13.x) and the 1.14 beta docs. The DNS/route
+schema this tool generates (typed DNS servers, `domain_resolver`, rule
+`action`s, unified TUN `address`) is already the current format — nothing
+here is on the legacy path sing-box is removing in 1.14.0. Two things came
+out of that check and are now handled automatically:
 
-Two deliberate deviations remain, both privacy-motivated rather than
-oversights:
-- `default_domain_resolver` (bootstraps your proxy server's own hostname,
-  if it's domain-based) stays on the *encrypted* resolver here, not the
-  plain-UDP one the reference config uses for this. There's no reason to
-  let even that one query go out in cleartext when keeping it encrypted
-  costs nothing extra.
-- That reference config uses `ip_accept_any` in a DNS rule to route general
-  app queries to its `hosts` server. That's real, documented syntax
-  (confirmed against sing-box's own `hosts` server docs) — but it solves a
-  different problem than this generator needs: intercepting arbitrary app
-  queries about domains in the hosts table. This generator's hosts table
-  only exists to bootstrap its own DNS servers' connections, which
-  `domain_resolver` (set directly on those server entries) already handles
-  on its own, narrower and simpler.
+- **IPv6 "reject" now actually captures the traffic first.** sing-box only
+  installs OS routes into the TUN for address families present on the TUN
+  interface. With an IPv4-only TUN address, IPv6 traffic was never routed
+  into sing-box at all, so a route-rule reject for it never fired — it just
+  leaked out the physical adapter unfiltered. Turning "Reject IPv6" on now
+  also adds an IPv6 TUN address so that traffic is actually captured, then
+  dropped. (v2rayN's July 2026 release added the same IPv4/IPv6 TUN address
+  handling for the same reason.)
+- **The proxy outbound pins its own DNS resolver.** An outbound resolving
+  its own server hostname bypasses `dns.rules` and uses
+  `route.default_domain_resolver` (or a per-outbound override) directly —
+  confirmed in sing-box's migration docs. If that ever resolved through the
+  DoH server tunneled over the proxy itself, a **domain-based** VLESS server
+  would deadlock resolving itself through itself. Each outbound now sets its
+  own `domain_resolver` to the direct/local resolver explicitly.
 
-## If something isn't working
+## Extending
 
-**Fixed:** bypass domains and per-app routing entered in anything but the
-exact bare form (a pasted URL like `https://example.com/path`, a domain with
-a port, a full executable path) were silently producing rules that could
-never match anything — not a routing bug, an input-parsing gap. Both fields
-now clean their input properly (URLs → bare domain, paths → bare file name),
-and the generator tells you what it actually used whenever that cleanup
-changes something, so you can verify it did what you meant.
+- `app.js` → `DOH_PROVIDERS` to add resolvers.
+- `parseVlessLink()` to add transports (currently unhandled: `kcp`, `quic` as
+  a VLESS transport — rare in the wild).
+- `buildConfig()` is the single source of truth for the output shape; it's
+  intentionally kept framework-free so it's easy to port to a CLI/Node script
+  later if you want a non-browser version.
+- Currently Windows-only by design (Windows paths, `.exe` process-name hooks
+  are not included since this tool builds a fresh config rather than a
+  system-wide TUN passthrough list). A macOS/Linux variant would mainly need
+  different `cache_file.path` conventions and no drive-letter paths for local
+  rule-sets.
 
-Set `"log": {"level": "debug"}` in the downloaded config and check your
-sing-box client's log output. A real error line is worth far more than a
-guess from documentation — most config-shaped problems become obvious once
-you can see what sing-box itself is actually doing.
+## Verify before trusting it
 
-A couple of things worth knowing that aren't bugs in the config itself:
+```powershell
+sing-box.exe check -c config.json
+```
 
-- **Browsers often do their own DNS-over-HTTPS**, independent of the OS —
-  Chrome/Firefox/Edge frequently ship this on by default. When active, the
-  browser's DNS never touches `hijack-dns` at all (it looks like ordinary
-  HTTPS traffic), so it bypasses whatever resolver you configured here. Not
-  a config bug — check your browser's own secure-DNS setting if domain
-  routing looks like it's being ignored.
-- **`strict_route`** closes a real leak — sing-box's own changelog (1.14.0-alpha.21)
-  confirms it directly: on Windows, the platform-level DNS hijacking filter
-  is only installed "when `strict_route` is enabled." Without it, DNS can go
-  out any active network adapter rather than the tunnel. It also has its own
-  confirmed platform quirks (e.g. reaching `127.0.0.1` on Windows). Defaults
-  on; worth knowing which trade-off you're making if you turn it off.
-- **FakeIP** has a confirmed sing-box crash bug in some versions
-  (`SagerNet/sing-box#2528`, a startup race in the FakeIP store). If enabling
-  it crashes your core, that's very likely a core-version issue rather than
-  this config — check for an update, and leave it off in the meantime; it's
-  optional.
-- **uTLS fingerprinting (`fp=chrome` etc. in a link) isn't a strong
-  anti-censorship measure**, per sing-box's own docs — this warning is
-  reiterated across multiple release changelogs (1.12.17, 1.13.0-beta.6,
-  1.13.0 itself), which is a sign SagerNet considers it worth repeating: it
-  has "fundamental architectural limitations" against real detection, and
-  NaiveProxy is recommended instead where TLS fingerprint resistance
-  actually matters. This generator applies whatever fingerprint a link
-  requests (or defaults to `chrome` for Reality) because that's what the
-  link asked for — it isn't a claim that doing so provides strong protection.
+## sing-box compatibility notes
 
-## Protocol coverage
+Checked against sing-box's official changelog (current stable: 1.13.x; 1.14
+in beta) as of August 2026:
 
-Each parser maps the common share-link query parameters (`security`, `sni`,
-`fp`, `pbk`/`sid` for Reality, `type`/`path`/`host`/`serviceName` for
-WS/gRPC/HTTP transports, `flow`, `obfs`, `alpn`, plugin options for
-shadowsocks, port-hopping for Hysteria2) onto the matching sing-box outbound
-fields. Share-link formats aren't fully standardized, so double-check
-anything unusual against the official docs before relying on it:
-https://sing-box.sagernet.org/configuration/
+- The generated config uses the current unified `address` field for the TUN
+  inbound, not the legacy split `inet4_address`/`inet6_address` fields
+  (removed in 1.12.0) — no action needed.
+- Adds the official `$schema` field (introduced 1.14.0-beta.2) pointing at
+  `https://sing-box.sagernet.org/schema.json`, so editors like VS Code get
+  autocomplete/validation when you open `config.json`. This is metadata only
+  and has no effect on the running client.
+- `dns.independent_cache: true` is kept deliberately even though it's
+  deprecated as of 1.14.0-alpha.11. On 1.14+, the DNS cache always keys by
+  transport regardless of this flag, but on the current 1.13.x stable branch
+  it's still the explicit opt-in for that safer per-resolver cache isolation
+  — removing it would silently weaken caching behavior for anyone not yet on
+  1.14. It'll need to come out once 1.16.0 removes the field outright.
+- sing-box 1.14 (alpha) is adding automatic TUN-level DNS hijacking
+  (`dns_mode`/`dns_address`), which could eventually simplify the manual
+  hijack-dns route rule here — not yet in a stable release, so no change made.
