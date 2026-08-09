@@ -12,10 +12,14 @@ entirely in the browser tab.
 - **DNS over HTTPS** for remote resolution, tunneled through your own proxy
   outbound (`detour: proxy`), with a `hosts`-type bootstrap so the resolver's
   own hostname never leaks over plaintext DNS. Local/direct resolution
-  defaults to the **same DoH provider, just not tunneled** — encrypted and
-  globally reachable, without the reliability variance of raw native OS
-  resolution or a region-specific hardcoded IP. "System default" (raw native
-  resolution) and a fixed IP are available as alternatives.
+  defaults to **System default** (your OS's own resolver) — this is what
+  actually works reliably in practice, since it's ordinary sanctioned DNS
+  traffic. A **Direct DoH** option is also available (same provider as your
+  remote resolver, just not tunneled) but depends on your network allowing
+  direct connections to that provider — on networks that filter/block public
+  DoH providers (common on exactly the kind of network that makes a proxy
+  necessary), Direct DoH resolution for bypass domains will simply fail to
+  load rather than fall back.
 - **Fail-closed routing**: `route.final` is your proxy outbound. Only private
   IPs and the `geosite-private` rule-set go direct — everything else is
   tunneled or dropped, never silently sent out in the clear. `geosite-private`
