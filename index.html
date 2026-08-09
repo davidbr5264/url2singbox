@@ -115,13 +115,24 @@
             <span class="field-label">Local / direct resolver (for LAN &amp; direct domains)</span>
             <select id="optLocalDns">
               <option value="system" selected>System default — raw native resolution</option>
-              <option value="doh">Direct DoH — matches remote resolver, not tunneled (needs unfiltered access to the provider)</option>
+              <option value="doh">Direct DoH — encrypted, not tunneled (needs unfiltered access to the provider)</option>
               <option value="119.29.29.29">119.29.29.29 — DNSPod</option>
               <option value="223.5.5.5">223.5.5.5 — AliDNS</option>
               <option value="custom">Custom IP…</option>
             </select>
           </label>
           <input type="text" id="optLocalDnsCustom" class="field-sub" placeholder="10.0.0.1" hidden>
+          <label class="field" id="localDohProviderRow" hidden>
+            <span class="field-label">Direct DoH provider <small>independent of the remote resolver above — try a different one if this doesn't load</small></span>
+            <select id="optLocalDohProvider" class="field-sub">
+              <option value="cloudflare" selected>Cloudflare — cloudflare-dns.com</option>
+              <option value="google">Google — dns.google</option>
+              <option value="quad9">Quad9 — dns.quad9.net</option>
+              <option value="alidns">AliDNS — dns.alidns.com</option>
+              <option value="custom">Custom domain…</option>
+            </select>
+          </label>
+          <input type="text" id="optLocalDohProviderCustom" class="field-sub" placeholder="doh.example.com" hidden>
 
           <label class="toggle">
             <input type="checkbox" id="optBlockQuic" checked>

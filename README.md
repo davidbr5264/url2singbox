@@ -14,12 +14,17 @@ entirely in the browser tab.
   own hostname never leaks over plaintext DNS. Local/direct resolution
   defaults to **System default** (your OS's own resolver) — this is what
   actually works reliably in practice, since it's ordinary sanctioned DNS
-  traffic. A **Direct DoH** option is also available (same provider as your
-  remote resolver, just not tunneled) but depends on your network allowing
-  direct connections to that provider — on networks that filter/block public
-  DoH providers (common on exactly the kind of network that makes a proxy
-  necessary), Direct DoH resolution for bypass domains will simply fail to
-  load rather than fall back.
+  traffic. A **Direct DoH** option is also available, with its own
+  independent provider choice (Cloudflare/Google/Quad9/AliDNS/custom) —
+  decoupled from the remote resolver, so if your network blocks direct
+  connections to one provider you can pick a different one for this
+  untunneled path without changing your remote resolver too. Direct DoH
+  still depends on your network allowing *some* direct DoH provider through;
+  on networks that block all of them, Direct DoH resolution for bypass
+  domains will simply fail to load rather than fall back — sing-box has no
+  built-in mechanism to automatically retry a failed DNS query against a
+  different server, so System default remains the safer choice if you're
+  unsure.
 - **Fail-closed routing**: `route.final` is your proxy outbound. Only private
   IPs and the `geosite-private` rule-set go direct — everything else is
   tunneled or dropped, never silently sent out in the clear. `geosite-private`

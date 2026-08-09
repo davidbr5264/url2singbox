@@ -298,11 +298,16 @@ function buildConfig(entries, opts) {
   // ---------- DNS ----------
   const remoteProvider = DOH_PROVIDERS[opts.remoteDns] ||
     { domain: opts.remoteDnsCustom || "cloudflare-dns.com", ips: [] };
+  const localDohProvider = DOH_PROVIDERS[opts.localDohProvider] ||
+    { domain: opts.localDohProviderCustom || "cloudflare-dns.com", ips: [] };
 
   const hostsEntries = {};
   Object.values(DOH_PROVIDERS).forEach(p => { hostsEntries[p.domain] = p.ips; });
   if (opts.remoteDns === "custom" && opts.remoteDnsCustom) {
     hostsEntries[opts.remoteDnsCustom] = [];
+  }
+  if (useDirectDoh && opts.localDohProvider === "custom" && opts.localDohProviderCustom) {
+    hostsEntries[opts.localDohProviderCustom] = [];
   }
 
   const dnsServers = [];
@@ -319,13 +324,12 @@ function buildConfig(entries, opts) {
     detour: proxyTag
   });
   if (useDirectDoh) {
-    // Same encrypted resolver as the remote one, just not tunneled through
-    // the proxy — avoids both a hardcoded region-specific IP (unreachable
-    // for users outside that region) and raw native UDP:53 resolution
-    // (reliability varies a lot by network/ISP). Bootstrapped via the same
-    // hosts_dns predefined IPs used for the remote resolver.
+    // Independent of the remote provider choice above — if your network
+    // blocks direct connections to one provider, pick a different one for
+    // this untunneled path without having to change your remote resolver
+    // too. Bootstrapped via the same hosts_dns predefined IPs.
     dnsServers.push({
-      server: remoteProvider.domain,
+      server: localDohProvider.domain,
       domain_resolver: "hosts_dns",
       path: "/dns-query",
       type: "https",
@@ -515,6 +519,8 @@ const optionEls = {
   remoteDnsCustom: document.getElementById("optRemoteDnsCustom"),
   localDns: document.getElementById("optLocalDns"),
   localDnsCustom: document.getElementById("optLocalDnsCustom"),
+  localDohProvider: document.getElementById("optLocalDohProvider"),
+  localDohProviderCustom: document.getElementById("optLocalDohProviderCustom"),
   blockQuic: document.getElementById("optBlockQuic"),
   blockIpv6: document.getElementById("optBlockIpv6"),
   tunName: document.getElementById("optTunName"),
@@ -541,6 +547,8 @@ function readOptions() {
     remoteDnsCustom: optionEls.remoteDnsCustom.value.trim(),
     localDns: optionEls.localDns.value,
     localDnsCustom: optionEls.localDnsCustom.value.trim(),
+    localDohProvider: optionEls.localDohProvider.value,
+    localDohProviderCustom: optionEls.localDohProviderCustom.value.trim(),
     blockQuic: optionEls.blockQuic.checked,
     blockIpv6: optionEls.blockIpv6.checked,
     tunName: optionEls.tunName.value.trim() || "singbox_tun",
@@ -567,6 +575,13 @@ optionEls.remoteDns.addEventListener("change", () => {
 });
 optionEls.localDns.addEventListener("change", () => {
   optionEls.localDnsCustom.hidden = optionEls.localDns.value !== "custom";
+  const isDoh = optionEls.localDns.value === "doh";
+  document.getElementById("localDohProviderRow").hidden = !isDoh;
+  optionEls.localDohProviderCustom.hidden = !(isDoh && optionEls.localDohProvider.value === "custom");
+  regenerate();
+});
+optionEls.localDohProvider.addEventListener("change", () => {
+  optionEls.localDohProviderCustom.hidden = optionEls.localDohProvider.value !== "custom";
   regenerate();
 });
 optionEls.ruleSetMode.addEventListener("change", () => {
@@ -761,4 +776,5 @@ els.downloadBtn.addEventListener("click", () => {
 // initial state
 optionEls.remoteDnsCustom.hidden = true;
 optionEls.localDnsCustom.hidden = true;
+optionEls.localDohProviderCustom.hidden = true;
 optionEls.ruleSetPath.hidden = optionEls.ruleSetMode.value !== "local";
