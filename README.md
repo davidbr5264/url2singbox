@@ -128,10 +128,19 @@ in beta) as of August 2026:
 - The generated config uses the current unified `address` field for the TUN
   inbound, not the legacy split `inet4_address`/`inet6_address` fields
   (removed in 1.12.0) — no action needed.
-- Adds the official `$schema` field (introduced 1.14.0-beta.2) pointing at
-  `https://sing-box.sagernet.org/schema.json`, so editors like VS Code get
-  autocomplete/validation when you open `config.json`. This is metadata only
-  and has no effect on the running client.
+- **`$schema` field — added then reverted.** sing-box 1.14.0-beta.2 added an
+  official `$schema` field for editor autocomplete. A previous version of
+  this tool added it to the generated config, on the assumption that an
+  extra top-level field would be silently ignored. That assumption was
+  wrong: sing-box's config parser uses `DisallowUnknownFields()` — strict
+  parsing — and `$schema` isn't a recognized field on the stable 1.13.x
+  branch most people actually run. The result was a config that fails to
+  parse at all, so sing-box refuses to start. **Do not add `$schema` to the
+  generated `config.json` itself** unless you're specifically targeting
+  1.14+. If you want editor autocomplete, point your editor's JSON schema
+  settings at `https://sing-box.sagernet.org/schema.json` for the file
+  instead of embedding it in the file (e.g. VS Code's `json.schemas`
+  setting), which has no effect on what sing-box actually parses.
 - `dns.independent_cache: true` is kept deliberately even though it's
   deprecated as of 1.14.0-alpha.11. On 1.14+, the DNS cache always keys by
   transport regardless of this flag, but on the current 1.13.x stable branch

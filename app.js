@@ -468,7 +468,6 @@ function buildConfig(entries, opts) {
   }
 
   const config = {
-    $schema: "https://sing-box.sagernet.org/schema.json",
     log: { level: opts.logLevel, timestamp: true },
     dns,
     inbounds,
