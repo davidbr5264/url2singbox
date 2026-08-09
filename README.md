@@ -76,29 +76,55 @@ The `_headers` file ships a Content-Security-Policy that blocks all outbound
 `connect-src` — a safety net confirming the page can't phone home even by
 accident, since it never needs to.
 
-## sing-box version notes
+## sing-box compatibility notes
 
-Checked against sing-box stable (1.13.x) and the 1.14 beta docs. The DNS/route
-schema this tool generates (typed DNS servers, `domain_resolver`, rule
-`action`s, unified TUN `address`) is already the current format — nothing
-here is on the legacy path sing-box is removing in 1.14.0. Two things came
-out of that check and are now handled automatically:
+Checked against sing-box's official changelog and internals docs (current
+stable: 1.13.x; 1.14 in beta) as of August 2026:
 
-- **IPv6 "reject" now actually captures the traffic first.** sing-box only
-  installs OS routes into the TUN for address families present on the TUN
-  interface. With an IPv4-only TUN address, IPv6 traffic was never routed
-  into sing-box at all, so a route-rule reject for it never fired — it just
-  leaked out the physical adapter unfiltered. Turning "Reject IPv6" on now
-  also adds an IPv6 TUN address so that traffic is actually captured, then
-  dropped. (v2rayN's July 2026 release added the same IPv4/IPv6 TUN address
-  handling for the same reason.)
-- **The proxy outbound pins its own DNS resolver.** An outbound resolving
-  its own server hostname bypasses `dns.rules` and uses
-  `route.default_domain_resolver` (or a per-outbound override) directly —
-  confirmed in sing-box's migration docs. If that ever resolved through the
-  DoH server tunneled over the proxy itself, a **domain-based** VLESS server
-  would deadlock resolving itself through itself. Each outbound now sets its
-  own `domain_resolver` to the direct/local resolver explicitly.
+- The generated config uses the current unified `address` field for the TUN
+  inbound, not the legacy split `inet4_address`/`inet6_address` fields
+  (removed in 1.12.0) — no action needed.
+- **`$schema` field — added, then reverted.** A previous version of this
+  tool added it to the generated config on the assumption that an extra
+  top-level field would be silently ignored. That was wrong: sing-box's
+  config parser uses `DisallowUnknownFields()` (strict parsing), and
+  `$schema` was only added as a recognized field in **1.14.0-beta.2** — on
+  the 1.13.x stable branch most people run, it caused sing-box to reject the
+  whole config and refuse to start. If you want editor autocomplete, point
+  your editor's JSON schema settings at
+  `https://sing-box.sagernet.org/schema.json` for the file instead of
+  embedding it (e.g. VS Code's `json.schemas` setting) — that has no effect
+  on what sing-box itself parses.
+- **TUN IPv6 address — added, then reverted.** A previous version added a
+  synthetic IPv6 address to the TUN interface whenever "Reject IPv6" was
+  enabled (the default), reasoning that sing-box only routes address
+  families actually present on the interface, so IPv6 needed to be present
+  to be captured-and-rejected at all. The reasoning wasn't unfounded, but it
+  came with an uncited, unverifiable claim about a specific v2rayN release
+  doing the same thing — that claim has been removed, since it couldn't be
+  confirmed. More importantly, the change itself caused real breakage: once
+  the TUN captures IPv6, ordinary dual-stack sites that a browser tries over
+  IPv6 first (common with Happy Eyeballs) get a hard reject instead of a
+  clean timeout-and-fallback, which can break page loads outright rather
+  than transparently falling back to IPv4. Reverted to IPv4-only TUN — IPv6
+  simply isn't routed into the tunnel, so the reject rule is inert rather
+  than actively enforced. Genuinely leak-proofing IPv6 requires disabling it
+  at the OS/adapter level, which is outside what a config.json can do.
+- **Outbound `domain_resolver` pin — added, then reverted.** A previous
+  version explicitly set `domain_resolver` on the VLESS outbound. It was
+  functionally redundant with `route.default_domain_resolver`, which already
+  computes to the identical value in every config this tool can produce —
+  removing it changes nothing, so it's gone for the sake of not carrying
+  unexplained code.
+- `dns.independent_cache: true` is kept deliberately even though it's
+  deprecated as of 1.14.0-alpha.11. On 1.14+, the DNS cache always keys by
+  transport regardless of this flag, but on the current 1.13.x stable branch
+  it's still the explicit opt-in for that safer per-resolver cache isolation
+  — removing it would silently weaken caching behavior for anyone not yet on
+  1.14. It'll need to come out once 1.16.0 removes the field outright.
+- sing-box 1.14 (alpha) is adding automatic TUN-level DNS hijacking
+  (`dns_mode`/`dns_address`), which could eventually simplify the manual
+  hijack-dns route rule here — not yet in a stable release, so no change made.
 
 ## Extending
 
@@ -119,34 +145,3 @@ out of that check and are now handled automatically:
 ```powershell
 sing-box.exe check -c config.json
 ```
-
-## sing-box compatibility notes
-
-Checked against sing-box's official changelog (current stable: 1.13.x; 1.14
-in beta) as of August 2026:
-
-- The generated config uses the current unified `address` field for the TUN
-  inbound, not the legacy split `inet4_address`/`inet6_address` fields
-  (removed in 1.12.0) — no action needed.
-- **`$schema` field — added then reverted.** sing-box 1.14.0-beta.2 added an
-  official `$schema` field for editor autocomplete. A previous version of
-  this tool added it to the generated config, on the assumption that an
-  extra top-level field would be silently ignored. That assumption was
-  wrong: sing-box's config parser uses `DisallowUnknownFields()` — strict
-  parsing — and `$schema` isn't a recognized field on the stable 1.13.x
-  branch most people actually run. The result was a config that fails to
-  parse at all, so sing-box refuses to start. **Do not add `$schema` to the
-  generated `config.json` itself** unless you're specifically targeting
-  1.14+. If you want editor autocomplete, point your editor's JSON schema
-  settings at `https://sing-box.sagernet.org/schema.json` for the file
-  instead of embedding it in the file (e.g. VS Code's `json.schemas`
-  setting), which has no effect on what sing-box actually parses.
-- `dns.independent_cache: true` is kept deliberately even though it's
-  deprecated as of 1.14.0-alpha.11. On 1.14+, the DNS cache always keys by
-  transport regardless of this flag, but on the current 1.13.x stable branch
-  it's still the explicit opt-in for that safer per-resolver cache isolation
-  — removing it would silently weaken caching behavior for anyone not yet on
-  1.14. It'll need to come out once 1.16.0 removes the field outright.
-- sing-box 1.14 (alpha) is adding automatic TUN-level DNS hijacking
-  (`dns_mode`/`dns_address`), which could eventually simplify the manual
-  hijack-dns route rule here — not yet in a stable release, so no change made.

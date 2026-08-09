@@ -380,13 +380,7 @@ function buildConfig(entries, opts) {
     type: "tun",
     tag: "tun",
     interface_name: opts.tunName,
-    // sing-box only programs OS routes for address families actually present
-    // on the TUN interface. Without a v6 address here, IPv6 traffic is never
-    // routed into the TUN at all — so a route-rule "reject" for ip_version:6
-    // would never even see it, and it leaks out the physical adapter instead.
-    // Adding this address is what makes the reject (or, if you disable
-    // rejection, a future proxy-routed) rule actually take effect.
-    address: opts.blockIpv6 ? [opts.tunAddr, "fdfe:dcba:9876::1/126"] : [opts.tunAddr],
+    address: [opts.tunAddr],
     mtu: opts.tunMtu,
     auto_route: true,
     strict_route: opts.strictRoute,
