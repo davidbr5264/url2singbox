@@ -135,6 +135,15 @@ stable: 1.13.x; 1.14 in beta) as of August 2026:
   (`dns_mode`/`dns_address`), which could eventually simplify the manual
   hijack-dns route rule here — not yet in a stable release, so no change made.
 
+- **Settings persistence**: every option field (DNS choices, TUN settings,
+  bypass lists, etc.) auto-saves to your browser's `localStorage` and
+  restores on your next visit — a reload no longer wipes 20+ configured
+  fields. The pasted `vless://` link(s) are deliberately **not** persisted,
+  since they carry UUIDs/keys and re-pasting one link is trivial compared to
+  re-entering everything else. Use "reset to defaults" (next to the options
+  header) to clear saved settings and revert every field to its original
+  value.
+
 ## Extending
 
 - `app.js` → `DOH_PROVIDERS` to add resolvers.

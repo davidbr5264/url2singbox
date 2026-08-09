@@ -541,6 +541,93 @@ const optionEls = {
   bypassApps: document.getElementById("optBypassApps"),
 };
 
+// ============================================================
+// SETTINGS PERSISTENCE
+// Saves option fields (not the pasted vless links — those carry UUIDs/keys,
+// and re-pasting one link is trivial compared to re-entering everything
+// else) to localStorage, so a reload doesn't wipe 20+ configured fields.
+// ============================================================
+const SETTINGS_STORAGE_KEY = "configforge:options:v1";
+
+// Snapshot the HTML-authored defaults now, before any restore runs, so
+// "reset to defaults" has a true baseline to return to.
+const defaultOptionValues = {};
+Object.entries(optionEls).forEach(([key, el]) => {
+  if (!el) return;
+  defaultOptionValues[key] = el.type === "checkbox" ? el.checked : el.value;
+});
+
+function getOptionValue(el) {
+  return el.type === "checkbox" ? el.checked : el.value;
+}
+function setOptionValue(el, value) {
+  if (el.type === "checkbox") el.checked = !!value;
+  else el.value = value;
+}
+
+function saveSettings() {
+  try {
+    const snapshot = {};
+    Object.entries(optionEls).forEach(([key, el]) => {
+      if (el) snapshot[key] = getOptionValue(el);
+    });
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(snapshot));
+    flashSettingsStatus("saved");
+  } catch {
+    // localStorage unavailable (private browsing, disabled storage, etc.) —
+    // fail silently, the tool still works without persistence.
+  }
+}
+
+function restoreSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return false;
+    const snapshot = JSON.parse(raw);
+    Object.entries(optionEls).forEach(([key, el]) => {
+      if (el && key in snapshot) setOptionValue(el, snapshot[key]);
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resetSettingsToDefaults() {
+  Object.entries(optionEls).forEach(([key, el]) => {
+    if (el) setOptionValue(el, defaultOptionValues[key]);
+  });
+  try { localStorage.removeItem(SETTINGS_STORAGE_KEY); } catch { /* ignore */ }
+  applyConditionalVisibility();
+  regenerate();
+  flashSettingsStatus("reset to defaults");
+}
+
+let settingsStatusTimer = null;
+function flashSettingsStatus(text) {
+  const el = document.getElementById("settingsStatus");
+  if (!el) return;
+  el.textContent = text;
+  el.className = "parse-status ok";
+  clearTimeout(settingsStatusTimer);
+  settingsStatusTimer = setTimeout(() => { el.textContent = ""; }, 1800);
+}
+
+// Recomputes every conditional show/hide field based on current values —
+// shared by initial load, restore, and reset, so they can't drift apart.
+function applyConditionalVisibility() {
+  optionEls.remoteDnsCustom.hidden = optionEls.remoteDns.value !== "custom";
+  optionEls.localDnsCustom.hidden = optionEls.localDns.value !== "custom";
+  const isDoh = optionEls.localDns.value === "doh";
+  document.getElementById("localDohProviderRow").hidden = !isDoh;
+  optionEls.localDohProviderCustom.hidden = !(isDoh && optionEls.localDohProvider.value === "custom");
+  optionEls.ruleSetPath.hidden = optionEls.ruleSetMode.value !== "local";
+  document.getElementById("socksPortRow").style.opacity = optionEls.socksEnable.checked ? "1" : "0.4";
+  const clashOn = optionEls.clashApi.checked;
+  document.getElementById("clashPortRow").style.opacity = clashOn ? "1" : "0.4";
+  document.getElementById("clashSecretRow").style.opacity = clashOn ? "1" : "0.4";
+}
+
 function readOptions() {
   return {
     remoteDns: optionEls.remoteDns.value,
@@ -569,41 +656,20 @@ function readOptions() {
 }
 
 // conditional field visibility
-optionEls.remoteDns.addEventListener("change", () => {
-  optionEls.remoteDnsCustom.hidden = optionEls.remoteDns.value !== "custom";
-  regenerate();
-});
-optionEls.localDns.addEventListener("change", () => {
-  optionEls.localDnsCustom.hidden = optionEls.localDns.value !== "custom";
-  const isDoh = optionEls.localDns.value === "doh";
-  document.getElementById("localDohProviderRow").hidden = !isDoh;
-  optionEls.localDohProviderCustom.hidden = !(isDoh && optionEls.localDohProvider.value === "custom");
-  regenerate();
-});
-optionEls.localDohProvider.addEventListener("change", () => {
-  optionEls.localDohProviderCustom.hidden = optionEls.localDohProvider.value !== "custom";
-  regenerate();
-});
-optionEls.ruleSetMode.addEventListener("change", () => {
-  optionEls.ruleSetPath.hidden = optionEls.ruleSetMode.value !== "local";
-  regenerate();
-});
-optionEls.socksEnable.addEventListener("change", () => {
-  document.getElementById("socksPortRow").style.opacity = optionEls.socksEnable.checked ? "1" : "0.4";
-  regenerate();
-});
-optionEls.clashApi.addEventListener("change", () => {
-  const on = optionEls.clashApi.checked;
-  document.getElementById("clashPortRow").style.opacity = on ? "1" : "0.4";
-  document.getElementById("clashSecretRow").style.opacity = on ? "1" : "0.4";
-  regenerate();
-});
+optionEls.remoteDns.addEventListener("change", applyConditionalVisibility);
+optionEls.localDns.addEventListener("change", applyConditionalVisibility);
+optionEls.localDohProvider.addEventListener("change", applyConditionalVisibility);
+optionEls.ruleSetMode.addEventListener("change", applyConditionalVisibility);
+optionEls.socksEnable.addEventListener("change", applyConditionalVisibility);
+optionEls.clashApi.addEventListener("change", applyConditionalVisibility);
 
 Object.values(optionEls).forEach(el => {
   if (!el) return;
   const evt = (el.tagName === "SELECT" || el.type === "checkbox") ? "change" : "input";
-  el.addEventListener(evt, regenerate);
+  el.addEventListener(evt, () => { regenerate(); saveSettings(); });
 });
+
+document.getElementById("resetOptionsBtn").addEventListener("click", resetSettingsToDefaults);
 
 function setNodeState(node, state) {
   const el = document.querySelector(`.path-node[data-node="${node}"]`);
@@ -774,7 +840,5 @@ els.downloadBtn.addEventListener("click", () => {
 });
 
 // initial state
-optionEls.remoteDnsCustom.hidden = true;
-optionEls.localDnsCustom.hidden = true;
-optionEls.localDohProviderCustom.hidden = true;
-optionEls.ruleSetPath.hidden = optionEls.ruleSetMode.value !== "local";
+restoreSettings();
+applyConditionalVisibility();

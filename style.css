@@ -185,6 +185,7 @@ code, pre{ font-family: var(--font-code); }
   color: var(--text);
 }
 .panel-sub{ font-size: 12px; color: var(--text-mute); font-family: var(--font-code); }
+.panel-head-actions{ display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 /* ---------- input ---------- */
 .link-input{
