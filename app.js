@@ -277,20 +277,11 @@ function buildConfig(entries, opts) {
   const hasBypassApps = bypassApps.processNames.length > 0;
 
   const useSystemDns = opts.localDns === "system";
+  const useDirectDoh = opts.localDns === "doh";
   const localDnsIp = opts.localDns === "custom" ? opts.localDnsCustom
-    : useSystemDns ? null
+    : (useSystemDns || useDirectDoh) ? null
     : opts.localDns;
-  const hasDirectResolver = useSystemDns || !!localDnsIp;
-
-  // Pin each proxy outbound's own server-hostname resolution to the direct
-  // resolver. Left unset, it falls back to route.default_domain_resolver —
-  // if that ever pointed at the DoH server (tunneled through this same
-  // outbound), a domain-based VLESS server would deadlock resolving itself
-  // through itself. Only matters when the server is a domain, not an IP,
-  // but it's free to set unconditionally.
-  if (hasDirectResolver) {
-    outbounds.forEach(o => { o.domain_resolver = "direct_dns"; });
-  }
+  const hasDirectResolver = useSystemDns || useDirectDoh || !!localDnsIp;
 
   // dedupe tags
   const seen = new Map();
@@ -327,7 +318,20 @@ function buildConfig(entries, opts) {
     tag: "remote_dns",
     detour: proxyTag
   });
-  if (useSystemDns) {
+  if (useDirectDoh) {
+    // Same encrypted resolver as the remote one, just not tunneled through
+    // the proxy — avoids both a hardcoded region-specific IP (unreachable
+    // for users outside that region) and raw native UDP:53 resolution
+    // (reliability varies a lot by network/ISP). Bootstrapped via the same
+    // hosts_dns predefined IPs used for the remote resolver.
+    dnsServers.push({
+      server: remoteProvider.domain,
+      domain_resolver: "hosts_dns",
+      path: "/dns-query",
+      type: "https",
+      tag: "direct_dns"
+    });
+  } else if (useSystemDns) {
     // Uses the OS's own resolver directly — matches what a browser would
     // get with no proxy running at all, avoiding geo/anycast mismatches
     // that a foreign DNS provider can cause for direct-routed domains.

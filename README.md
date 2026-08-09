@@ -12,9 +12,10 @@ entirely in the browser tab.
 - **DNS over HTTPS** for remote resolution, tunneled through your own proxy
   outbound (`detour: proxy`), with a `hosts`-type bootstrap so the resolver's
   own hostname never leaks over plaintext DNS. Local/direct resolution
-  defaults to the OS's own resolver (sing-box's `local` DNS server type) —
-  matching what your browser gets with no proxy at all — or a specific
-  IP if you set one.
+  defaults to the **same DoH provider, just not tunneled** — encrypted and
+  globally reachable, without the reliability variance of raw native OS
+  resolution or a region-specific hardcoded IP. "System default" (raw native
+  resolution) and a fixed IP are available as alternatives.
 - **Fail-closed routing**: `route.final` is your proxy outbound. Only private
   IPs and the `geosite-private` rule-set go direct — everything else is
   tunneled or dropped, never silently sent out in the clear. `geosite-private`
