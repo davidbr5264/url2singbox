@@ -361,7 +361,9 @@ function buildConfig(entries, opts) {
   if (hasBypassApps) {
     dnsRules.push({ server: hasDirectResolver ? "direct_dns" : "remote_dns", process_name: bypassApps.processNames });
   }
-  dnsRules.push({ server: hasDirectResolver ? "direct_dns" : "remote_dns", rule_set: ["geosite-private"] });
+  if (opts.useGeositePrivate) {
+    dnsRules.push({ server: hasDirectResolver ? "direct_dns" : "remote_dns", rule_set: ["geosite-private"] });
+  }
 
   const dns = {
     servers: dnsServers,
@@ -444,16 +446,20 @@ function buildConfig(entries, opts) {
   if (hasBypassApps) {
     routeRules.push({ outbound: "direct", process_name: bypassApps.processNames });
   }
-  routeRules.push({ outbound: "direct", rule_set: ["geosite-private"] });
+  if (opts.useGeositePrivate) {
+    routeRules.push({ outbound: "direct", rule_set: ["geosite-private"] });
+  }
   routeRules.push({ outbound: proxyTag, port_range: ["0:65535"] });
 
   const route = {
     default_domain_resolver: { server: hasDirectResolver ? "direct_dns" : "remote_dns" },
     auto_detect_interface: true,
     rules: routeRules,
-    rule_set: [ruleSet],
     final: proxyTag
   };
+  if (opts.useGeositePrivate) {
+    route.rule_set = [ruleSet];
+  }
 
   // ---------- experimental ----------
   const experimental = {};
@@ -534,6 +540,7 @@ const optionEls = {
   clashPort: document.getElementById("optClashPort"),
   clashSecret: document.getElementById("optClashSecret"),
   ruleSetMode: document.getElementById("optRuleSetMode"),
+  useGeositePrivate: document.getElementById("optUseGeositePrivate"),
   ruleSetPath: document.getElementById("optRuleSetPath"),
   logLevel: document.getElementById("optLogLevel"),
   cacheFile: document.getElementById("optCacheFile"),
@@ -621,7 +628,9 @@ function applyConditionalVisibility() {
   const isDoh = optionEls.localDns.value === "doh";
   document.getElementById("localDohProviderRow").hidden = !isDoh;
   optionEls.localDohProviderCustom.hidden = !(isDoh && optionEls.localDohProvider.value === "custom");
-  optionEls.ruleSetPath.hidden = optionEls.ruleSetMode.value !== "local";
+  const geositeOn = optionEls.useGeositePrivate.checked;
+  document.getElementById("ruleSetModeRow").hidden = !geositeOn;
+  optionEls.ruleSetPath.hidden = !geositeOn || optionEls.ruleSetMode.value !== "local";
   document.getElementById("socksPortRow").style.opacity = optionEls.socksEnable.checked ? "1" : "0.4";
   const clashOn = optionEls.clashApi.checked;
   document.getElementById("clashPortRow").style.opacity = clashOn ? "1" : "0.4";
@@ -649,6 +658,7 @@ function readOptions() {
     clashPort: parseInt(optionEls.clashPort.value, 10) || 10814,
     clashSecret: optionEls.clashSecret.value.trim(),
     ruleSetMode: optionEls.ruleSetMode.value,
+    useGeositePrivate: optionEls.useGeositePrivate.checked,
     ruleSetPath: optionEls.ruleSetPath.value.trim() || "C:\\sing-box\\geosite-private.srs",
     logLevel: optionEls.logLevel.value,
     cacheFile: optionEls.cacheFile.checked,
@@ -660,6 +670,7 @@ optionEls.remoteDns.addEventListener("change", applyConditionalVisibility);
 optionEls.localDns.addEventListener("change", applyConditionalVisibility);
 optionEls.localDohProvider.addEventListener("change", applyConditionalVisibility);
 optionEls.ruleSetMode.addEventListener("change", applyConditionalVisibility);
+optionEls.useGeositePrivate.addEventListener("change", applyConditionalVisibility);
 optionEls.socksEnable.addEventListener("change", applyConditionalVisibility);
 optionEls.clashApi.addEventListener("change", applyConditionalVisibility);
 

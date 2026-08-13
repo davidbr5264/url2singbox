@@ -212,7 +212,13 @@
         <fieldset class="opt-group">
           <legend>Rule sets &amp; misc</legend>
 
-          <label class="field">
+          <label class="toggle">
+            <input type="checkbox" id="optUseGeositePrivate" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-text">geosite-private rule-set<small>matches local-network hostnames (router/NAS/printer admin panels, etc.) direct — not required: <code>ip_is_private</code> already routes private IPs direct on its own, with no file or download</small></span>
+          </label>
+
+          <label class="field" id="ruleSetModeRow">
             <span class="field-label">geosite-private rule-set source</span>
             <select id="optRuleSetMode">
               <option value="remote">Auto-download (SagerNet, recommended)</option>

@@ -25,11 +25,13 @@ entirely in the browser tab.
   built-in mechanism to automatically retry a failed DNS query against a
   different server, so System default remains the safer choice if you're
   unsure.
-- **Fail-closed routing**: `route.final` is your proxy outbound. Only private
-  IPs and the `geosite-private` rule-set go direct — everything else is
-  tunneled or dropped, never silently sent out in the clear. `geosite-private`
-  defaults to a local file at `C:\sing-box\geosite-private.srs`; switch the
-  dropdown to auto-download if you'd rather not manage that file yourself.
+- **Fail-closed routing**: `route.final` is your proxy outbound. Private IPs
+  go direct via the built-in `ip_is_private` match — no file or download
+  needed for that. The `geosite-private` rule-set adds direct routing for
+  known local-network *hostnames* (router/NAS/printer admin panels, etc.) on
+  top of that; it's optional and toggleable, defaulting to a local file at
+  `C:\sing-box\geosite-private.srs`, with auto-download as an alternative
+  source, or disable it entirely if you don't need it.
 - **Leak-path closers** (toggleable): reject UDP/443 (QUIC) so HTTP/3 can't
   route around a TCP-only path, and reject IPv6 since the TUN address here is
   IPv4-only.
