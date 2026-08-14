@@ -1,9 +1,17 @@
-# Config Forge — vless:// → sing-box (Windows)
+# Config Forge — vless:// → sing-box (Windows &amp; Linux)
 
 A static, client-side tool that turns one or more `vless://` share links into a
 hardened `config.json` for the [sing-box](https://sing-box.sagernet.org) core
-on Windows. Nothing is uploaded anywhere — parsing and config generation run
-entirely in the browser tab.
+on Windows or Linux. Nothing is uploaded anywhere — parsing and config
+generation run entirely in the browser tab.
+
+A "Target platform" selector at the top of the options panel switches path
+conventions (Windows drive-letter paths vs. Linux `/etc/sing-box/`-style
+paths) and process-name conventions (`.exe` vs. extension-less binaries) —
+the sing-box config.json **schema** itself is identical on both platforms;
+only these strings differ. Switching platforms won't clobber a rule-set path
+you've customized — it only swaps the value if it still matches a known
+default.
 
 ## What it builds
 
@@ -44,11 +52,13 @@ entirely in the browser tab.
   `geosite-private`. One per line; a bare domain matches itself and its
   subdomains, a leading `.` matches subdomains only, and `keyword:`/`regex:`
   prefixes give substring/regex matching.
-- **Bypass applications**: a list of Windows executables (`steam.exe`, or a
-  full path — only the file name is used) whose traffic is sent direct via
-  `process_name` matching, for apps that break under a VPN/TUN (games with
-  anti-cheat, LAN-discovery tools, etc). Applied to both DNS and routing,
-  independent of the bypass-domain rule.
+- **Bypass applications**: a list of executables (`steam.exe` on Windows,
+  `steam` on Linux — or a full path, only the file name is used) whose
+  traffic is sent direct via `process_name` matching, for apps that break
+  under a VPN/TUN (games with anti-cheat, LAN-discovery tools, etc).
+  Validation follows the Target platform selector — `.exe`-extension checks
+  on Windows, a 15-character `/proc` truncation warning on Linux. Applied to
+  both DNS and routing, independent of the bypass-domain rule.
 
 ## Run it locally
 
@@ -154,11 +164,31 @@ stable: 1.13.x; 1.14 in beta) as of August 2026:
 - `buildConfig()` is the single source of truth for the output shape; it's
   intentionally kept framework-free so it's easy to port to a CLI/Node script
   later if you want a non-browser version.
-- Currently Windows-only by design (Windows paths, `.exe` process-name hooks
-  are not included since this tool builds a fresh config rather than a
-  system-wide TUN passthrough list). A macOS/Linux variant would mainly need
-  different `cache_file.path` conventions and no drive-letter paths for local
-  rule-sets.
+- Supports Windows and Linux via the "Target platform" selector
+  (`PLATFORM_DEFAULTS` in `app.js` for path conventions, `parseBypassApps()`
+  for process-name validation). macOS isn't wired up yet — it would mainly
+  need its own `PLATFORM_DEFAULTS` entry (e.g. `/usr/local/etc/sing-box/` or
+  `/opt/homebrew/etc/sing-box/`, depending on install method) and macOS's own
+  process-name conventions, which are closer to Linux's (extension-less) than
+  Windows's.
+
+## Running on Linux
+
+sing-box's TUN mode needs elevated privileges on Linux, same as on Windows:
+
+- **Quick/manual runs**: `sudo sing-box run -c config.json`.
+- **systemd service (recommended for anything long-running)**: grant
+  capabilities instead of running fully as root —
+  `CAP_NET_ADMIN` and `CAP_NET_RAW` for the TUN interface and routing, plus
+  `CAP_SYS_PTRACE` if you're using the bypass-applications feature (process
+  matching reads `/proc`). The official sing-box systemd service files
+  already set these; see
+  [sing-box's package-manager install docs](https://sing-box.sagernet.org/installation/package-manager/)
+  if you're not using a packaged install.
+- The default local rule-set path (`/etc/sing-box/geosite-private.srs`)
+  matches where the official `.deb`/`.rpm` packages expect config files to
+  live — adjust it if your install uses a different layout (e.g.
+  `/usr/local/etc/sing-box/` for some manual-install scripts).
 
 ## Verify before trusting it
 

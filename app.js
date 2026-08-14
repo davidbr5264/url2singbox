@@ -28,6 +28,16 @@ const DOH_PROVIDERS = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Path/process-name conventions differ by OS; the sing-box config.json
+// schema itself does not — every field below stays identical either way.
+const PLATFORM_DEFAULTS = {
+  windows: { ruleSetPath: "C:\\sing-box\\geosite-private.srs" },
+  linux: { ruleSetPath: "/etc/sing-box/geosite-private.srs" }
+};
+function defaultRuleSetPath(platform) {
+  return (PLATFORM_DEFAULTS[platform] || PLATFORM_DEFAULTS.windows).ruleSetPath;
+}
+
 // ---------- state ----------
 let parsedOutbounds = [];   // array of { tag, config, warnings: [] }
 let lastConfig = null;
@@ -236,8 +246,11 @@ function parseBypassDomains(text) {
 // BYPASS APPLICATION PARSING
 // One process name (or full path — only the filename is kept) per line.
 // sing-box's process_name route field matches the executable's file name.
+// Validation differs by platform: Windows needs the .exe extension; Linux
+// process names are extension-less and the kernel truncates /proc/[pid]/comm
+// to 15 characters, so a longer name may silently fail to match.
 // ============================================================
-function parseBypassApps(text) {
+function parseBypassApps(text, platform) {
   const processNames = [];
   const warnings = [];
 
@@ -250,7 +263,14 @@ function parseBypassApps(text) {
     line = line.replace(/^["']|["']$/g, "");
     const base = line.split(/[\\/]/).pop().trim();
     if (!base) { warnings.push(`Bypass app rule "${raw.trim()}" didn't leave a usable name — skipped.`); return; }
-    if (!/\.exe$/i.test(base)) {
+    if (platform === "linux") {
+      if (/\.exe$/i.test(base)) {
+        warnings.push(`"${base}" has a .exe extension — Linux process names usually don't. Double check this is the right binary name.`);
+      }
+      if (base.length > 15) {
+        warnings.push(`"${base}" is longer than 15 characters — the Linux kernel truncates process names to 15 chars in /proc, so this may not match. Try the truncated form if it doesn't work.`);
+      }
+    } else if (!/\.exe$/i.test(base)) {
       warnings.push(`"${base}" doesn't end in .exe — process_name matching needs the exact executable file name on Windows.`);
     }
     processNames.push(base);
@@ -521,6 +541,7 @@ const els = {
 };
 
 const optionEls = {
+  platform: document.getElementById("optPlatform"),
   remoteDns: document.getElementById("optRemoteDns"),
   remoteDnsCustom: document.getElementById("optRemoteDnsCustom"),
   localDns: document.getElementById("optLocalDns"),
@@ -606,6 +627,7 @@ function resetSettingsToDefaults() {
   });
   try { localStorage.removeItem(SETTINGS_STORAGE_KEY); } catch { /* ignore */ }
   applyConditionalVisibility();
+  applyPlatformDefaults();
   regenerate();
   flashSettingsStatus("reset to defaults");
 }
@@ -637,8 +659,52 @@ function applyConditionalVisibility() {
   document.getElementById("clashSecretRow").style.opacity = clashOn ? "1" : "0.4";
 }
 
+// Updates copy that differs by target OS, and smart-swaps the rule-set path
+// default when the platform changes — but only if the field still holds
+// EITHER platform's known default (i.e. the user hasn't customized it), so
+// switching platforms never clobbers a value someone deliberately typed.
+function applyPlatformDefaults() {
+  const platform = optionEls.platform.value;
+  const isLinux = platform === "linux";
+
+  const knownDefaults = Object.values(PLATFORM_DEFAULTS).map(d => d.ruleSetPath);
+  if (knownDefaults.includes(optionEls.ruleSetPath.value.trim()) || !optionEls.ruleSetPath.value.trim()) {
+    optionEls.ruleSetPath.value = defaultRuleSetPath(platform);
+  }
+
+  const pill = document.getElementById("platformPill");
+  if (pill) pill.textContent = `target: sing-box · ${isLinux ? "linux" : "windows"}`;
+
+  const hint = document.getElementById("platformHint");
+  if (hint) {
+    hint.textContent = isLinux
+      ? "TUN mode needs elevated capabilities — run as root, or grant the binary CAP_NET_ADMIN/CAP_NET_RAW (and CAP_SYS_PTRACE if using bypass applications) via setcap."
+      : "TUN mode needs Administrator — right-click sing-box (or your terminal) and \"Run as administrator\".";
+  }
+
+  const bLabel = document.getElementById("bypassAppsLabel");
+  if (bLabel) bLabel.textContent = isLinux ? "One Linux process name per line." : "One Windows executable per line.";
+
+  const bHint = document.getElementById("bypassAppsHint");
+  if (bHint) {
+    bHint.innerHTML = isLinux
+      ? 'Matches by process name (e.g. <code>steam</code>) — a full path is fine too, only the filename is used. Linux truncates process names to 15 characters internally. Useful for apps that break under a VPN/TUN.'
+      : 'Matches by process name (e.g. <code>steam.exe</code>) — a full path is fine too, only the filename is used. Useful for apps that break under a VPN/TUN, like games with anti-cheat or LAN-discovery tools.';
+  }
+
+  optionEls.bypassApps.placeholder = isLinux
+    ? "steam\ndiscord\n/usr/bin/some-launcher"
+    : "steam.exe\nEpicGamesLauncher.exe\nC:\\Program Files\\App\\app.exe";
+
+  const lede = document.getElementById("ledeText");
+  if (lede) {
+    lede.innerHTML = `Paste one or more <code>vless://</code> links. Config Forge builds a sing-box config for the ${isLinux ? "Linux" : "Windows"} client — TUN inbound, DNS over HTTPS routed through your own proxy, and a fail-closed route table — using the same shape as a v2rayN-generated config. Nothing leaves this tab: the conversion runs locally in JavaScript.`;
+  }
+}
+
 function readOptions() {
   return {
+    platform: optionEls.platform.value,
     remoteDns: optionEls.remoteDns.value,
     remoteDnsCustom: optionEls.remoteDnsCustom.value.trim(),
     localDns: optionEls.localDns.value,
@@ -659,13 +725,14 @@ function readOptions() {
     clashSecret: optionEls.clashSecret.value.trim(),
     ruleSetMode: optionEls.ruleSetMode.value,
     useGeositePrivate: optionEls.useGeositePrivate.checked,
-    ruleSetPath: optionEls.ruleSetPath.value.trim() || "C:\\sing-box\\geosite-private.srs",
+    ruleSetPath: optionEls.ruleSetPath.value.trim() || defaultRuleSetPath(optionEls.platform.value),
     logLevel: optionEls.logLevel.value,
     cacheFile: optionEls.cacheFile.checked,
   };
 }
 
 // conditional field visibility
+optionEls.platform.addEventListener("change", applyPlatformDefaults);
 optionEls.remoteDns.addEventListener("change", applyConditionalVisibility);
 optionEls.localDns.addEventListener("change", applyConditionalVisibility);
 optionEls.localDohProvider.addEventListener("change", applyConditionalVisibility);
@@ -787,7 +854,7 @@ function regenerate() {
   const bypass = parseBypassDomains(optionEls.bypassDomains.value);
   bypass.warnings.forEach(w => allWarnings.push(w));
   opts.bypass = bypass;
-  const bypassApps = parseBypassApps(optionEls.bypassApps.value);
+  const bypassApps = parseBypassApps(optionEls.bypassApps.value, optionEls.platform.value);
   bypassApps.warnings.forEach(w => allWarnings.push(w));
   opts.bypassApps = bypassApps;
   const config = buildConfig(entries, opts);
@@ -853,3 +920,4 @@ els.downloadBtn.addEventListener("click", () => {
 // initial state
 restoreSettings();
 applyConditionalVisibility();
+applyPlatformDefaults();

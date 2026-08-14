@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>vless → sing-box · config forge</title>
-<meta name="description" content="Convert vless:// links into hardened sing-box client configs for Windows. Runs entirely in your browser — nothing is uploaded.">
+<meta name="description" content="Convert vless:// links into hardened sing-box client configs for Windows or Linux. Runs entirely in your browser — nothing is uploaded.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 rx=%225%22 fill=%22%230b0e14%22/><path d=%22M4 12h4l2-6 4 12 2-6h4%22 stroke=%22%233ddc97%22 stroke-width=%222%22 fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -25,7 +25,7 @@
     </div>
     <div class="top-meta">
       <span class="pill">runs in your browser</span>
-      <span class="pill pill-target">target: sing-box · windows</span>
+      <span class="pill pill-target" id="platformPill">target: sing-box · windows</span>
     </div>
   </div>
 </header>
@@ -35,7 +35,7 @@
   <section class="intro">
     <p class="eyebrow">vless:// → config.json</p>
     <h1>Turn a share link into a hardened client config.</h1>
-    <p class="lede">Paste one or more <code>vless://</code> links. Config Forge builds a sing-box config for the Windows client — TUN inbound, DNS over HTTPS routed through your own proxy, and a fail-closed route table — using the same shape as a v2rayN-generated config. Nothing leaves this tab: the conversion runs locally in JavaScript.</p>
+    <p class="lede" id="ledeText">Paste one or more <code>vless://</code> links. Config Forge builds a sing-box config for the Windows client — TUN inbound, DNS over HTTPS routed through your own proxy, and a fail-closed route table — using the same shape as a v2rayN-generated config. Nothing leaves this tab: the conversion runs locally in JavaScript.</p>
   </section>
 
   <!-- SIGNAL PATH — signature element -->
@@ -99,6 +99,21 @@
       </div>
 
       <div class="options-grid">
+
+        <fieldset class="opt-group opt-group-wide">
+          <legend>Target platform</legend>
+
+          <label class="field">
+            <span class="field-label">sing-box runs on <small>changes path/process-name conventions below — the config.json schema itself is identical either way</small></span>
+            <select id="optPlatform">
+              <option value="windows" selected>Windows</option>
+              <option value="linux">Linux</option>
+            </select>
+          </label>
+          <span class="field-label field-label-hint" id="platformHint">
+            TUN mode needs Administrator — right-click sing-box (or your terminal) and "Run as administrator".
+          </span>
+        </fieldset>
 
         <fieldset class="opt-group">
           <legend>DNS &amp; privacy</legend>
@@ -171,7 +186,7 @@
             <select id="optTunStack">
               <option value="gvisor" selected>gvisor — safest, most compatible</option>
               <option value="mixed">mixed</option>
-              <option value="system">system — fastest, needs WinTun</option>
+              <option value="system">system — fastest, needs native TUN driver support</option>
             </select>
           </label>
           <label class="toggle">
@@ -264,10 +279,10 @@
           <legend>Bypass applications <span class="legend-note">— those apps' traffic sent direct, by process name</span></legend>
 
           <label class="field">
-            <span class="field-label">One Windows executable per line.</span>
+            <span class="field-label" id="bypassAppsLabel">One Windows executable per line.</span>
             <textarea id="optBypassApps" class="bypass-input" rows="3" spellcheck="false"
               placeholder="steam.exe&#10;EpicGamesLauncher.exe&#10;C:\Program Files\App\app.exe"></textarea>
-            <span class="field-label field-label-hint">
+            <span class="field-label field-label-hint" id="bypassAppsHint">
               Matches by process name (e.g. <code>steam.exe</code>) — a full path is fine too, only the
               filename is used. Useful for apps that break under a VPN/TUN, like games with anti-cheat
               or LAN-discovery tools.
@@ -311,8 +326,8 @@
         <p>QUIC (UDP/443) can carry HTTP/3 straight past a TCP-only proxy path; it's rejected. IPv6 isn't captured by the IPv4-only TUN address here, so it's rejected too rather than left to route unprotected — both are toggles above if you'd rather handle them differently.</p>
       </div>
       <div class="note">
-        <h3>Windows paths</h3>
-        <p>This build targets the Windows sing-box client: <code>experimental.cache_file.path</code> and the rule-set path (if you choose local rule-sets) use Windows-style paths. Point the rule-set path at wherever your sing-box install keeps its <code>.srs</code> files, or leave it on auto-download.</p>
+        <h3>Platform paths</h3>
+        <p>Rule-set and process-name conventions follow the "Target platform" selector above — Windows paths and <code>.exe</code> process names, or Linux POSIX paths and extension-less binary names. The config.json <em>schema</em> is identical either way; only these path/name strings change. Point the rule-set path at wherever your sing-box install keeps its <code>.srs</code> files, or leave it on auto-download.</p>
       </div>
     </div>
   </section>
