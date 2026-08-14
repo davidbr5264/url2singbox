@@ -59,6 +59,12 @@ default.
   Validation follows the Target platform selector — `.exe`-extension checks
   on Windows, a 15-character `/proc` truncation warning on Linux. Applied to
   both DNS and routing, independent of the bypass-domain rule.
+- **Self-process exclusion**: optionally list the full path(s) to your
+  sing-box binary to add explicit `process_path` rules (hijack-dns for its
+  own port-53 traffic, direct outbound for everything else) placed before
+  the sniff action — extra safety on top of `route.auto_detect_interface`,
+  based on a pattern seen in a real-world v2rayN-on-Linux config. Optional;
+  leaving it blank produces the exact same config as before this existed.
 
 ## Run it locally
 

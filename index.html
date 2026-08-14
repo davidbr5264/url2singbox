@@ -194,6 +194,11 @@
             <span class="toggle-track"><span class="toggle-thumb"></span></span>
             <span class="toggle-text">Strict route<small>forces all system traffic into the TUN, even off-subnet</small></span>
           </label>
+          <label class="field">
+            <span class="field-label">Exclude this client's own traffic by binary path <small>optional, extra safety alongside <code>auto_detect_interface</code> — one full path per line, e.g. where your sing-box binary actually lives</small></span>
+            <textarea id="optSelfProcessPaths" class="bypass-input" rows="2" spellcheck="false"
+              placeholder="/home/you/.local/share/v2rayN/bin/sing_box/sing-box"></textarea>
+          </label>
         </fieldset>
 
         <fieldset class="opt-group">

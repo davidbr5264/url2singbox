@@ -280,6 +280,32 @@ function parseBypassApps(text, platform) {
 }
 
 // ============================================================
+// SELF-PROCESS EXCLUSION PATHS
+// Full binary paths (not reduced to filename — process_path needs the
+// exact path, unlike process_name above) for excluding this proxy client's
+// own traffic from its own TUN, as extra safety alongside
+// route.auto_detect_interface. One full path per line.
+// ============================================================
+function parseSelfProcessPaths(text, platform) {
+  const paths = [];
+  const warnings = [];
+  const looksAbsolute = platform === "linux"
+    ? (p) => p.startsWith("/")
+    : (p) => /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("\\\\");
+
+  text.split("\n").forEach(raw => {
+    const line = raw.trim().replace(/^["']|["']$/g, "");
+    if (!line || line.startsWith("#")) return;
+    if (!looksAbsolute(line)) {
+      warnings.push(`"${line}" doesn't look like a full path — process_path needs the complete path to the binary, not just its name.`);
+    }
+    paths.push(line);
+  });
+
+  return { paths: [...new Set(paths)], warnings };
+}
+
+// ============================================================
 // CONFIG BUILDER
 // ============================================================
 function buildConfig(entries, opts) {
@@ -443,7 +469,17 @@ function buildConfig(entries, opts) {
         path: opts.ruleSetPath
       };
 
-  const routeRules = [
+  const selfPaths = opts.selfProcessPaths && opts.selfProcessPaths.length ? opts.selfProcessPaths : [];
+
+  const routeRules = [];
+  if (selfPaths.length) {
+    // Evaluated first and by process identity, not sniffed domain — no need
+    // to wait for the sniff action below. Extra safety alongside
+    // auto_detect_interface, based on a real-world v2rayN Linux config.
+    routeRules.push({ port: [53], process_path: selfPaths, action: "hijack-dns" });
+    routeRules.push({ outbound: "direct", process_path: selfPaths });
+  }
+  routeRules.push(
     { action: "sniff" },
     {
       type: "logical", mode: "or",
@@ -452,7 +488,7 @@ function buildConfig(entries, opts) {
     },
     { outbound: "direct", clash_mode: "Direct" },
     { outbound: proxyTag, clash_mode: "Global" }
-  ];
+  );
   if (opts.blockQuic) {
     routeRules.push({ network: ["udp"], port: [443], action: "reject" });
   }
@@ -567,6 +603,7 @@ const optionEls = {
   cacheFile: document.getElementById("optCacheFile"),
   bypassDomains: document.getElementById("optBypassDomains"),
   bypassApps: document.getElementById("optBypassApps"),
+  selfProcessPaths: document.getElementById("optSelfProcessPaths"),
 };
 
 // ============================================================
@@ -857,6 +894,9 @@ function regenerate() {
   const bypassApps = parseBypassApps(optionEls.bypassApps.value, optionEls.platform.value);
   bypassApps.warnings.forEach(w => allWarnings.push(w));
   opts.bypassApps = bypassApps;
+  const selfProcess = parseSelfProcessPaths(optionEls.selfProcessPaths.value, optionEls.platform.value);
+  selfProcess.warnings.forEach(w => allWarnings.push(w));
+  opts.selfProcessPaths = selfProcess.paths;
   const config = buildConfig(entries, opts);
   lastConfig = config;
 
