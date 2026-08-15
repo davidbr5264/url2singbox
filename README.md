@@ -9,9 +9,14 @@ A "Target platform" selector at the top of the options panel switches path
 conventions (Windows drive-letter paths vs. Linux `/etc/sing-box/`-style
 paths) and process-name conventions (`.exe` vs. extension-less binaries) —
 the sing-box config.json **schema** itself is identical on both platforms;
-only these strings differ. Switching platforms won't clobber a rule-set path
-you've customized — it only swaps the value if it still matches a known
-default.
+only these strings differ. The three fields whose content is actually
+shaped for one OS (rule-set path, bypass applications, self-process
+exclusion paths) are **fully isolated per platform** — each one keeps its
+own independent value, so switching platforms swaps between two separate
+profiles rather than leaving stale Windows-shaped content sitting in a
+field while Linux is selected, or vice versa. Nothing you've typed for one
+platform is ever lost or overwritten by switching to the other; both
+persist across reloads.
 
 ## What it builds
 
@@ -171,9 +176,10 @@ stable: 1.13.x; 1.14 in beta) as of August 2026:
   intentionally kept framework-free so it's easy to port to a CLI/Node script
   later if you want a non-browser version.
 - Supports Windows and Linux via the "Target platform" selector
-  (`PLATFORM_DEFAULTS` in `app.js` for path conventions, `parseBypassApps()`
-  for process-name validation). macOS isn't wired up yet — it would mainly
-  need its own `PLATFORM_DEFAULTS` entry (e.g. `/usr/local/etc/sing-box/` or
+  (`PLATFORM_DEFAULTS` in `app.js` for defaults, `ISOLATED_FIELDS` +
+  `platformProfiles` for the per-platform isolation, `parseBypassApps()` for
+  process-name validation). macOS isn't wired up yet — it would mainly need
+  its own `PLATFORM_DEFAULTS` entry (e.g. `/usr/local/etc/sing-box/` or
   `/opt/homebrew/etc/sing-box/`, depending on install method) and macOS's own
   process-name conventions, which are closer to Linux's (extension-less) than
   Windows's.

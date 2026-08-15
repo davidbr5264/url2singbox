@@ -29,10 +29,24 @@ const DOH_PROVIDERS = {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Path/process-name conventions differ by OS; the sing-box config.json
-// schema itself does not — every field below stays identical either way.
+// schema itself does not. These three fields are the ones whose *content*
+// is shaped for one platform and meaningless (or actively wrong) on the
+// other, so each platform gets its own fully isolated copy — switching
+// platforms swaps between two separate profiles rather than leaving stale
+// Windows-shaped content sitting there while Linux is selected, or vice
+// versa.
+const ISOLATED_FIELDS = ["ruleSetPath", "bypassApps", "selfProcessPaths"];
 const PLATFORM_DEFAULTS = {
-  windows: { ruleSetPath: "C:\\sing-box\\geosite-private.srs" },
-  linux: { ruleSetPath: "/etc/sing-box/geosite-private.srs" }
+  windows: {
+    ruleSetPath: "C:\\sing-box\\geosite-private.srs",
+    bypassApps: "",
+    selfProcessPaths: ""
+  },
+  linux: {
+    ruleSetPath: "/etc/sing-box/geosite-private.srs",
+    bypassApps: "",
+    selfProcessPaths: ""
+  }
 };
 function defaultRuleSetPath(platform) {
   return (PLATFORM_DEFAULTS[platform] || PLATFORM_DEFAULTS.windows).ruleSetPath;
@@ -607,6 +621,43 @@ const optionEls = {
 };
 
 // ============================================================
+// PLATFORM PROFILE ISOLATION
+// Each platform gets its own independent copy of the fields whose content
+// is shaped for one OS and wrong-shaped for the other. Switching platforms
+// swaps between two separate stashes rather than leaving stale content
+// (Windows .exe names while Linux is selected, etc.) sitting in the field.
+// ============================================================
+const platformProfiles = {
+  windows: { ...PLATFORM_DEFAULTS.windows },
+  linux: { ...PLATFORM_DEFAULTS.linux }
+};
+let currentPlatformTracker = optionEls.platform.value || "windows";
+
+function syncCurrentPlatformProfile() {
+  const p = platformProfiles[currentPlatformTracker] || (platformProfiles[currentPlatformTracker] = {});
+  ISOLATED_FIELDS.forEach(key => {
+    const el = optionEls[key];
+    if (el) p[key] = getOptionValue(el);
+  });
+}
+
+function loadPlatformProfile(platform) {
+  const defaults = PLATFORM_DEFAULTS[platform] || PLATFORM_DEFAULTS.windows;
+  const p = platformProfiles[platform] || defaults;
+  ISOLATED_FIELDS.forEach(key => {
+    const el = optionEls[key];
+    if (el) setOptionValue(el, key in p ? p[key] : defaults[key]);
+  });
+}
+
+function switchPlatformProfile(newPlatform) {
+  if (newPlatform === currentPlatformTracker) return;
+  syncCurrentPlatformProfile();
+  loadPlatformProfile(newPlatform);
+  currentPlatformTracker = newPlatform;
+}
+
+// ============================================================
 // SETTINGS PERSISTENCE
 // Saves option fields (not the pasted vless links — those carry UUIDs/keys,
 // and re-pasting one link is trivial compared to re-entering everything
@@ -632,10 +683,12 @@ function setOptionValue(el, value) {
 
 function saveSettings() {
   try {
+    syncCurrentPlatformProfile();
     const snapshot = {};
     Object.entries(optionEls).forEach(([key, el]) => {
       if (el) snapshot[key] = getOptionValue(el);
     });
+    snapshot.__platformProfiles = platformProfiles;
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(snapshot));
     flashSettingsStatus("saved");
   } catch {
@@ -652,6 +705,15 @@ function restoreSettings() {
     Object.entries(optionEls).forEach(([key, el]) => {
       if (el && key in snapshot) setOptionValue(el, snapshot[key]);
     });
+    if (snapshot.__platformProfiles) {
+      Object.assign(platformProfiles.windows, snapshot.__platformProfiles.windows || {});
+      Object.assign(platformProfiles.linux, snapshot.__platformProfiles.linux || {});
+    }
+    // Isolated fields are authoritatively owned by the profile store, not
+    // the flat snapshot above — load from the profile for whichever
+    // platform was restored, so the two stay consistent.
+    currentPlatformTracker = optionEls.platform.value || "windows";
+    loadPlatformProfile(currentPlatformTracker);
     return true;
   } catch {
     return false;
@@ -662,6 +724,9 @@ function resetSettingsToDefaults() {
   Object.entries(optionEls).forEach(([key, el]) => {
     if (el) setOptionValue(el, defaultOptionValues[key]);
   });
+  platformProfiles.windows = { ...PLATFORM_DEFAULTS.windows };
+  platformProfiles.linux = { ...PLATFORM_DEFAULTS.linux };
+  currentPlatformTracker = optionEls.platform.value || "windows";
   try { localStorage.removeItem(SETTINGS_STORAGE_KEY); } catch { /* ignore */ }
   applyConditionalVisibility();
   applyPlatformDefaults();
@@ -696,18 +761,12 @@ function applyConditionalVisibility() {
   document.getElementById("clashSecretRow").style.opacity = clashOn ? "1" : "0.4";
 }
 
-// Updates copy that differs by target OS, and smart-swaps the rule-set path
-// default when the platform changes — but only if the field still holds
-// EITHER platform's known default (i.e. the user hasn't customized it), so
-// switching platforms never clobbers a value someone deliberately typed.
+// Updates copy that differs by target OS. Isolated-field values themselves
+// (ruleSetPath, bypassApps, selfProcessPaths) are handled by
+// switchPlatformProfile(), not here — this only updates text/labels.
 function applyPlatformDefaults() {
   const platform = optionEls.platform.value;
   const isLinux = platform === "linux";
-
-  const knownDefaults = Object.values(PLATFORM_DEFAULTS).map(d => d.ruleSetPath);
-  if (knownDefaults.includes(optionEls.ruleSetPath.value.trim()) || !optionEls.ruleSetPath.value.trim()) {
-    optionEls.ruleSetPath.value = defaultRuleSetPath(platform);
-  }
 
   const pill = document.getElementById("platformPill");
   if (pill) pill.textContent = `target: sing-box · ${isLinux ? "linux" : "windows"}`;
@@ -769,7 +828,10 @@ function readOptions() {
 }
 
 // conditional field visibility
-optionEls.platform.addEventListener("change", applyPlatformDefaults);
+optionEls.platform.addEventListener("change", () => {
+  switchPlatformProfile(optionEls.platform.value);
+  applyPlatformDefaults();
+});
 optionEls.remoteDns.addEventListener("change", applyConditionalVisibility);
 optionEls.localDns.addEventListener("change", applyConditionalVisibility);
 optionEls.localDohProvider.addEventListener("change", applyConditionalVisibility);
