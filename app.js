@@ -620,6 +620,15 @@ const optionEls = {
   selfProcessPaths: document.getElementById("optSelfProcessPaths"),
 };
 
+// Each page (index.html / linux.html) locks its platform via a hidden
+// <select> with a single <option>. Both pages share the same localStorage
+// (same origin), so a settings snapshot saved from the other page could
+// otherwise try to restore a "platform" value with no matching <option> on
+// this page — which the HTML spec says clears the selection rather than
+// leaving it unchanged. Capturing the true value now, before restore can
+// touch it, means this page's platform is never in question.
+const PAGE_FIXED_PLATFORM = optionEls.platform.value;
+
 // ============================================================
 // PLATFORM PROFILE ISOLATION
 // Each platform gets its own independent copy of the fields whose content
@@ -709,10 +718,13 @@ function restoreSettings() {
       Object.assign(platformProfiles.windows, snapshot.__platformProfiles.windows || {});
       Object.assign(platformProfiles.linux, snapshot.__platformProfiles.linux || {});
     }
+    // This page's platform is fixed — never trust a restored value for it
+    // (see PAGE_FIXED_PLATFORM above for why).
+    setOptionValue(optionEls.platform, PAGE_FIXED_PLATFORM);
     // Isolated fields are authoritatively owned by the profile store, not
     // the flat snapshot above — load from the profile for whichever
-    // platform was restored, so the two stay consistent.
-    currentPlatformTracker = optionEls.platform.value || "windows";
+    // platform this page targets, so the two stay consistent.
+    currentPlatformTracker = PAGE_FIXED_PLATFORM;
     loadPlatformProfile(currentPlatformTracker);
     return true;
   } catch {
@@ -724,13 +736,16 @@ function resetSettingsToDefaults() {
   Object.entries(optionEls).forEach(([key, el]) => {
     if (el) setOptionValue(el, defaultOptionValues[key]);
   });
-  platformProfiles.windows = { ...PLATFORM_DEFAULTS.windows };
-  platformProfiles.linux = { ...PLATFORM_DEFAULTS.linux };
-  currentPlatformTracker = optionEls.platform.value || "windows";
-  try { localStorage.removeItem(SETTINGS_STORAGE_KEY); } catch { /* ignore */ }
+  // Only reset THIS page's own platform profile. Both pages share the same
+  // localStorage (same origin) — wiping the whole entry or resetting both
+  // profiles here would silently delete the other page's stashed settings
+  // too, which is exactly the cross-page clash isolation is meant to avoid.
+  platformProfiles[PAGE_FIXED_PLATFORM] = { ...PLATFORM_DEFAULTS[PAGE_FIXED_PLATFORM] };
+  currentPlatformTracker = PAGE_FIXED_PLATFORM;
   applyConditionalVisibility();
   applyPlatformDefaults();
   regenerate();
+  saveSettings(); // persists the reset state while preserving the other page's profile
   flashSettingsStatus("reset to defaults");
 }
 

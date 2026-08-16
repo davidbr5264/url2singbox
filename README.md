@@ -5,18 +5,14 @@ hardened `config.json` for the [sing-box](https://sing-box.sagernet.org) core
 on Windows or Linux. Nothing is uploaded anywhere — parsing and config
 generation run entirely in the browser tab.
 
-A "Target platform" selector at the top of the options panel switches path
+Two separate pages, one per platform — [`index.html`](index.html) for
+Windows, [`linux.html`](linux.html) for Linux — cross-linked to each other.
+Each page locks its platform; there's no in-page toggle to get wrong. Path
 conventions (Windows drive-letter paths vs. Linux `/etc/sing-box/`-style
-paths) and process-name conventions (`.exe` vs. extension-less binaries) —
-the sing-box config.json **schema** itself is identical on both platforms;
-only these strings differ. The three fields whose content is actually
-shaped for one OS (rule-set path, bypass applications, self-process
-exclusion paths) are **fully isolated per platform** — each one keeps its
-own independent value, so switching platforms swaps between two separate
-profiles rather than leaving stale Windows-shaped content sitting in a
-field while Linux is selected, or vice versa. Nothing you've typed for one
-platform is ever lost or overwritten by switching to the other; both
-persist across reloads.
+paths) and process-name conventions (`.exe` vs. extension-less binaries)
+differ between the two pages accordingly — the sing-box config.json
+**schema** itself is identical either way, only these strings differ. Both
+pages share the same `app.js` and `style.css`.
 
 ## What it builds
 
@@ -86,8 +82,8 @@ python3 -m http.server 8080
 **Option A — dashboard, no git required**
 1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
    **Upload assets**.
-2. Drag in this folder's contents (`index.html`, `style.css`, `app.js`,
-   `_headers`).
+2. Drag in this folder's contents (`index.html`, `linux.html`, `style.css`,
+   `app.js`, `_headers`).
 3. Deploy. You'll get a `*.pages.dev` URL immediately.
 
 **Option B — git-connected (auto-deploys on push)**
@@ -160,12 +156,17 @@ stable: 1.13.x; 1.14 in beta) as of August 2026:
 
 - **Settings persistence**: every option field (DNS choices, TUN settings,
   bypass lists, etc.) auto-saves to your browser's `localStorage` and
-  restores on your next visit — a reload no longer wipes 20+ configured
-  fields. The pasted `vless://` link(s) are deliberately **not** persisted,
-  since they carry UUIDs/keys and re-pasting one link is trivial compared to
-  re-entering everything else. Use "reset to defaults" (next to the options
-  header) to clear saved settings and revert every field to its original
-  value.
+  restores on your next visit. Windows and Linux pages share the same
+  origin/storage, but the three platform-shaped fields (rule-set path,
+  bypass applications, self-process exclusion paths) are stored as fully
+  separate profiles per page — visiting one page never shows, overwrites,
+  or resets the other's stashed values for those fields. The pasted
+  `vless://` link(s) are deliberately **not** persisted, since they carry
+  UUIDs/keys and re-pasting one link is trivial compared to re-entering
+  everything else. Use "reset to defaults" (next to the options header) to
+  clear this page's saved settings and revert every field to its original
+  value — it only resets this page's own platform profile, not the other
+  page's.
 
 ## Extending
 
@@ -175,14 +176,21 @@ stable: 1.13.x; 1.14 in beta) as of August 2026:
 - `buildConfig()` is the single source of truth for the output shape; it's
   intentionally kept framework-free so it's easy to port to a CLI/Node script
   later if you want a non-browser version.
-- Supports Windows and Linux via the "Target platform" selector
-  (`PLATFORM_DEFAULTS` in `app.js` for defaults, `ISOLATED_FIELDS` +
-  `platformProfiles` for the per-platform isolation, `parseBypassApps()` for
-  process-name validation). macOS isn't wired up yet — it would mainly need
-  its own `PLATFORM_DEFAULTS` entry (e.g. `/usr/local/etc/sing-box/` or
-  `/opt/homebrew/etc/sing-box/`, depending on install method) and macOS's own
-  process-name conventions, which are closer to Linux's (extension-less) than
-  Windows's.
+- Windows and Linux are separate pages (`index.html` / `linux.html`) sharing
+  one `app.js`. Each page locks its platform via a hidden, single-option
+  `<select id="optPlatform">` — `app.js` itself still supports live
+  switching internally (`PLATFORM_DEFAULTS`, `ISOLATED_FIELDS`,
+  `platformProfiles`, `switchPlatformProfile()`), left in place in case
+  you want to reintroduce an in-page toggle later, but no current page
+  exposes it in the UI. Adding a third platform means: a new
+  `PLATFORM_DEFAULTS` entry, `parseBypassApps()`/`parseSelfProcessPaths()`
+  validation branches, and a new HTML page cloned from one of the existing
+  two with its defaults swapped (see the diffs between `index.html` and
+  `linux.html` for exactly what needs to change). macOS would be the
+  natural next one — process-name conventions are closer to Linux's
+  (extension-less) than Windows's, and a plausible rule-set path would be
+  `/usr/local/etc/sing-box/` or `/opt/homebrew/etc/sing-box/` depending on
+  install method.
 
 ## Running on Linux
 

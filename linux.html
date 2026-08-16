@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>vless → sing-box · config forge</title>
-<meta name="description" content="Convert vless:// links into hardened sing-box client configs for Windows or Linux. Runs entirely in your browser — nothing is uploaded.">
+<title>vless → sing-box · config forge (Linux)</title>
+<meta name="description" content="Convert vless:// links into hardened sing-box client configs for Linux. Runs entirely in your browser — nothing is uploaded.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 rx=%225%22 fill=%22%230b0e14%22/><path d=%22M4 12h4l2-6 4 12 2-6h4%22 stroke=%22%233ddc97%22 stroke-width=%222%22 fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -25,8 +25,8 @@
     </div>
     <div class="top-meta">
       <span class="pill">runs in your browser</span>
-      <span class="pill pill-target" id="platformPill">target: sing-box · windows</span>
-      <a href="linux.html" class="pill pill-link">linux version →</a>
+      <span class="pill pill-target" id="platformPill">target: sing-box · linux</span>
+      <a href="index.html" class="pill pill-link">windows version →</a>
     </div>
   </div>
 </header>
@@ -36,7 +36,7 @@
   <section class="intro">
     <p class="eyebrow">vless:// → config.json</p>
     <h1>Turn a share link into a hardened client config.</h1>
-    <p class="lede" id="ledeText">Paste one or more <code>vless://</code> links. Config Forge builds a sing-box config for the Windows client — TUN inbound, DNS over HTTPS routed through your own proxy, and a fail-closed route table — using the same shape as a v2rayN-generated config. Nothing leaves this tab: the conversion runs locally in JavaScript.</p>
+    <p class="lede" id="ledeText">Paste one or more <code>vless://</code> links. Config Forge builds a sing-box config for the Linux client — TUN inbound, DNS over HTTPS routed through your own proxy, and a fail-closed route table — using the same shape as a v2rayN-generated config. Nothing leaves this tab: the conversion runs locally in JavaScript.</p>
   </section>
 
   <!-- SIGNAL PATH — signature element -->
@@ -106,12 +106,12 @@
           <div class="platform-badge">
             <span class="platform-badge-dot"></span>
             <div class="platform-badge-text">
-              <strong>This build targets Windows.</strong>
-              <span class="field-label field-label-hint" id="platformHint">TUN mode needs Administrator — right-click sing-box (or your terminal) and "Run as administrator".</span>
+              <strong>This build targets Linux.</strong>
+              <span class="field-label field-label-hint" id="platformHint">TUN mode needs elevated capabilities — run as root, or grant the binary CAP_NET_ADMIN/CAP_NET_RAW (and CAP_SYS_PTRACE if using bypass applications) via setcap.</span>
             </div>
-            <a href="linux.html" class="btn btn-ghost btn-sm">switch to Linux version →</a>
+            <a href="index.html" class="btn btn-ghost btn-sm">switch to Windows version →</a>
           </div>
-          <select id="optPlatform" hidden><option value="windows" selected>Windows</option></select>
+          <select id="optPlatform" hidden><option value="linux" selected>Linux</option></select>
         </fieldset>
 
         <fieldset class="opt-group">
@@ -196,7 +196,7 @@
           <label class="field">
             <span class="field-label">Exclude this client's own traffic by binary path <small>optional, extra safety alongside <code>auto_detect_interface</code> — one full path per line, e.g. where your sing-box binary actually lives</small></span>
             <textarea id="optSelfProcessPaths" class="bypass-input" rows="2" spellcheck="false"
-              placeholder="C:\sing-box\sing-box.exe"></textarea>
+              placeholder="/home/you/.local/share/v2rayN/bin/sing_box/sing-box"></textarea>
           </label>
         </fieldset>
 
@@ -245,7 +245,7 @@
             </select>
           </label>
           <input type="text" id="optRuleSetPath" class="field-sub"
-                 value="C:\\sing-box\\geosite-private.srs">
+                 value="/etc/sing-box/geosite-private.srs">
 
           <label class="field">
             <span class="field-label">Log level</span>
@@ -283,13 +283,13 @@
           <legend>Bypass applications <span class="legend-note">— those apps' traffic sent direct, by process name</span></legend>
 
           <label class="field">
-            <span class="field-label" id="bypassAppsLabel">One Windows executable per line.</span>
+            <span class="field-label" id="bypassAppsLabel">One Linux process name per line.</span>
             <textarea id="optBypassApps" class="bypass-input" rows="3" spellcheck="false"
-              placeholder="steam.exe&#10;EpicGamesLauncher.exe&#10;C:\Program Files\App\app.exe"></textarea>
+              placeholder="steam&#10;discord&#10;/usr/bin/some-launcher"></textarea>
             <span class="field-label field-label-hint" id="bypassAppsHint">
-              Matches by process name (e.g. <code>steam.exe</code>) — a full path is fine too, only the
-              filename is used. Useful for apps that break under a VPN/TUN, like games with anti-cheat
-              or LAN-discovery tools.
+              Matches by process name (e.g. <code>steam</code>) — a full path is fine too, only the
+              filename is used. Linux truncates process names to 15 characters internally. Useful for
+              apps that break under a VPN/TUN.
             </span>
           </label>
         </fieldset>
@@ -331,7 +331,7 @@
       </div>
       <div class="note">
         <h3>Platform paths</h3>
-        <p>This page targets Windows — drive-letter paths and <code>.exe</code> process names throughout. The config.json <em>schema</em> is identical on Linux; only these path/name strings differ. Need Linux instead? See the <a href="linux.html">Linux version</a>. Point the rule-set path at wherever your sing-box install keeps its <code>.srs</code> files, or leave it on auto-download.</p>
+        <p>This page targets Linux — POSIX paths and extension-less process names throughout. The config.json <em>schema</em> is identical on Windows; only these path/name strings differ. Need Windows instead? See the <a href="index.html">Windows version</a>. Point the rule-set path at wherever your sing-box install keeps its <code>.srs</code> files, or leave it on auto-download.</p>
       </div>
     </div>
   </section>
