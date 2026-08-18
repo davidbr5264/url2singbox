@@ -14,6 +14,59 @@ differ between the two pages accordingly — the sing-box config.json
 **schema** itself is identical either way, only these strings differ. Both
 pages share the same `app.js` and `style.css`.
 
+## A third, source-faithful variant: [`v2rayn.html`](v2rayn.html)
+
+A genuinely separate tool with its own generator (`app-v2rayn.js`), built by
+reading v2rayN's actual C# source
+(`SingboxDnsService.cs`, `SingboxRoutingService.cs`,
+`SingboxOutboundService.cs`, `CoreConfigSingboxService.cs` — fetched and
+read directly from
+[github.com/2dust/v2rayN](https://github.com/2dust/v2rayN)) rather than
+reverse-engineered from example exports. Concrete differences from the
+main tool, each verified against the real source:
+
+- **3-tier bootstrap DNS**: a small plain-IP bootstrap resolver (not a hosts
+  table) resolves the remote/direct DNS servers' own hostnames by default,
+  so any custom DoH provider works — not just ones hardcoded into a hosts
+  table. The static hosts table is still used automatically as a faster
+  override, but only for providers it actually contains.
+- **Flow normalization**: `xtls-rprx-vision-udp443` → `xtls-rprx-vision`,
+  matching v2rayN's own normalization.
+- **No forced TLS fingerprint**: if the link doesn't specify `fp=`, no
+  `utls` block is added at all — v2rayN never fakes one you didn't ask for.
+  An explicit "force fingerprint" option is available as this tool's own
+  addition on top, clearly labeled as such.
+- **Transport-aware SNI fallback**: derives the TLS SNI from the transport's
+  own Host header (ws/httpupgrade) rather than a single flat query-param
+  fallback.
+- **Real TUN self-loop protection**: the TUN interface's own address is
+  rejected-and-dropped, matched per single address rather than by CIDR
+  prefix — on Linux, sing-tun registers a derived address in that same
+  prefix range with systemd-resolved as a DNS upstream, so a prefix-wide
+  match would silently break system DNS.
+- **Automatic self-process exclusion**: this client's own traffic is always
+  excluded from the tunnel by process name (platform-correct binary name),
+  with no manual path to configure — matching v2rayN's own behavior, and
+  replacing the main tool's manual self-process-paths field.
+- **ICMP routing policy** and **TLS record fragmentation** (anti-DPI SNI
+  evasion), both real v2rayN TUN options this tool didn't have before.
+- **DNS strategy** (`prefer_ipv4`/`prefer_ipv6`/`ipv4_only`/`ipv6_only`) is
+  exposed and applied to `route.default_domain_resolver` and every DNS rule
+  that routes to remote/direct — the same field a real, current v2rayN bug
+  (GitHub issue #8863, Feb 2026) writes an Xray-style value into instead of
+  a sing-box-style one; this tool uses the correct sing-box strings.
+- Platform is a **live selector on one page** here (not a fixed page pair
+  like `index.html`/`linux.html`), since this is a single standalone tool —
+  its own separate `localStorage` key means no interaction with the other
+  two pages' saved settings.
+
+Not carried over from v2rayN's C# source: full protocol parity (VMess,
+Trojan, Shadowsocks, Hysteria2, TUIC, WireGuard — this tool is still
+VLESS-only), FakeIP, raw custom-DNS passthrough, and the full
+region-based geosite/geoip rule-splitting logic. The main tool's own
+additions (bypass domains, bypass applications, the geosite-private toggle)
+are kept here too, layered on top, since they're independently useful.
+
 ## What it builds
 
 - **TUN inbound** (`strict_route`, `gvisor` stack by default) + optional local
@@ -82,8 +135,8 @@ python3 -m http.server 8080
 **Option A — dashboard, no git required**
 1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
    **Upload assets**.
-2. Drag in this folder's contents (`index.html`, `linux.html`, `style.css`,
-   `app.js`, `_headers`).
+2. Drag in this folder's contents (`index.html`, `linux.html`, `v2rayn.html`,
+   `style.css`, `app.js`, `app-v2rayn.js`, `_headers`).
 3. Deploy. You'll get a `*.pages.dev` URL immediately.
 
 **Option B — git-connected (auto-deploys on push)**

@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>vless → sing-box · config forge</title>
-<meta name="description" content="Convert vless:// links into hardened sing-box client configs for Windows or Linux. Runs entirely in your browser — nothing is uploaded.">
+<title>vless → sing-box · config forge (v2rayN-faithful)</title>
+<meta name="description" content="Convert vless:// links into sing-box client configs generated with the same DNS/routing architecture as v2rayN's actual source code. Runs entirely in your browser — nothing is uploaded.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 rx=%225%22 fill=%22%230b0e14%22/><path d=%22M4 12h4l2-6 4 12 2-6h4%22 stroke=%22%233ddc97%22 stroke-width=%222%22 fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,12 +22,13 @@
         <svg viewBox="0 0 24 24" width="20" height="20"><path d="M2 12h4.5l2.5-7 5 14 2.5-7H22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
       <span class="brand-text">config<span class="brand-accent">forge</span></span>
+      <span class="pill pill-target">v2rayN-faithful</span>
     </div>
     <div class="top-meta">
       <span class="pill">runs in your browser</span>
       <span class="pill pill-target" id="platformPill">target: sing-box · windows</span>
       <a href="linux.html" class="pill pill-link">linux version →</a>
-      <a href="v2rayn.html" class="pill pill-link">v2rayN-faithful version →</a>
+      <a href="index.html" class="pill pill-link">original version →</a>
     </div>
   </div>
 </header>
@@ -36,8 +37,8 @@
 
   <section class="intro">
     <p class="eyebrow">vless:// → config.json</p>
-    <h1>Turn a share link into a hardened client config.</h1>
-    <p class="lede" id="ledeText">Paste one or more <code>vless://</code> links. Config Forge builds a sing-box config for the Windows client — TUN inbound, DNS over HTTPS routed through your own proxy, and a fail-closed route table — using the same shape as a v2rayN-generated config. Nothing leaves this tab: the conversion runs locally in JavaScript.</p>
+    <h1>Built from v2rayN's own C# source, not reverse-engineered.</h1>
+    <p class="lede" id="ledeText">Paste one or more <code>vless://</code> links. This version's DNS and routing generation is ported directly from v2rayN's actual <code>SingboxDnsService.cs</code> / <code>SingboxRoutingService.cs</code> source (bootstrap DNS resolver, TUN self-loop protection, automatic self-process exclusion, ICMP routing policy) rather than reverse-engineered from example exports. See the note below for exactly what differs from the <a href="index.html">original version</a>. Nothing leaves this tab: the conversion runs locally in JavaScript.</p>
   </section>
 
   <!-- SIGNAL PATH — signature element -->
@@ -104,54 +105,68 @@
 
         <fieldset class="opt-group opt-group-wide platform-banner">
           <legend>Target platform</legend>
-          <div class="platform-badge">
-            <span class="platform-badge-dot"></span>
-            <div class="platform-badge-text">
-              <strong>This build targets Windows.</strong>
-              <span class="field-label field-label-hint" id="platformHint">TUN mode needs Administrator — right-click sing-box (or your terminal) and "Run as administrator".</span>
-            </div>
-            <a href="linux.html" class="btn btn-ghost btn-sm">switch to Linux version →</a>
-          </div>
-          <select id="optPlatform" hidden><option value="windows" selected>Windows</option></select>
+          <label class="field">
+            <span class="field-label">sing-box runs on <small>changes rule-set path default, bypass-app validation, and self-process-exclusion naming — the config.json schema itself is identical either way</small></span>
+            <select id="optPlatform">
+              <option value="windows" selected>Windows</option>
+              <option value="linux">Linux</option>
+            </select>
+          </label>
+          <span class="field-label field-label-hint" id="platformHint">TUN mode needs Administrator — right-click sing-box (or your terminal) and "Run as administrator".</span>
         </fieldset>
 
         <fieldset class="opt-group">
-          <legend>DNS &amp; privacy</legend>
+          <legend>DNS &amp; privacy <span class="legend-note">— v2rayN's 3-tier bootstrap architecture</span></legend>
 
           <label class="field">
-            <span class="field-label">Remote resolver (DNS‑over‑HTTPS, tunneled through proxy)</span>
+            <span class="field-label">Remote resolver <small>tunneled through the proxy</small></span>
             <select id="optRemoteDns">
-              <option value="cloudflare" selected>Cloudflare — cloudflare-dns.com</option>
-              <option value="google">Google — dns.google</option>
-              <option value="quad9">Quad9 — dns.quad9.net</option>
-              <option value="alidns">AliDNS — dns.alidns.com</option>
-              <option value="custom">Custom domain…</option>
+              <option value="https://cloudflare-dns.com/dns-query" selected>Cloudflare — cloudflare-dns.com</option>
+              <option value="https://dns.google/dns-query">Google — dns.google</option>
+              <option value="https://dns.cloudflare.com/dns-query">Cloudflare (alt) — dns.cloudflare.com</option>
+              <option value="1.1.1.1">1.1.1.1 (plain, not DoH)</option>
+              <option value="custom">Custom address…</option>
             </select>
           </label>
-          <input type="text" id="optRemoteDnsCustom" class="field-sub" placeholder="doh.example.com" hidden>
+          <input type="text" id="optRemoteDnsCustom" class="field-sub" placeholder="https://doh.example.com/dns-query" hidden>
 
           <label class="field">
-            <span class="field-label">Local / direct resolver (for LAN &amp; direct domains)</span>
-            <select id="optLocalDns">
-              <option value="system" selected>System default — raw native resolution</option>
-              <option value="doh">Direct DoH — encrypted, not tunneled (needs unfiltered access to the provider)</option>
-              <option value="119.29.29.29">119.29.29.29 — DNSPod</option>
+            <span class="field-label">Direct resolver <small>for LAN, bypass domains &amp; geosite-private</small></span>
+            <select id="optDirectDns">
+              <option value="119.29.29.29" selected>119.29.29.29 — DNSPod (v2rayN default)</option>
               <option value="223.5.5.5">223.5.5.5 — AliDNS</option>
+              <option value="https://doh.pub/dns-query">doh.pub (v2rayN default DoH option)</option>
+              <option value="system">System default — for networks where DNSPod is unreachable</option>
+              <option value="custom">Custom address…</option>
+            </select>
+          </label>
+          <input type="text" id="optDirectDnsCustom" class="field-sub" placeholder="1.1.1.1 or https://doh.example.com/dns-query" hidden>
+          <span class="field-label field-label-hint">
+            119.29.29.29 (DNSPod) is v2rayN's actual default, but it's a China-anycast address — unreachable for
+            many users outside China. If direct/bypass domains fail to load, switch this to <strong>System default</strong>.
+          </span>
+
+          <label class="field">
+            <span class="field-label">Bootstrap resolver <small>resolves the remote/direct servers' own hostnames — plain IP, no chicken-and-egg problem</small></span>
+            <select id="optBootstrapDns">
+              <option value="119.29.29.29" selected>119.29.29.29 — DNSPod (v2rayN default)</option>
+              <option value="223.5.5.5">223.5.5.5 — AliDNS</option>
+              <option value="system">System default</option>
               <option value="custom">Custom IP…</option>
             </select>
           </label>
-          <input type="text" id="optLocalDnsCustom" class="field-sub" placeholder="10.0.0.1" hidden>
-          <label class="field" id="localDohProviderRow" hidden>
-            <span class="field-label">Direct DoH provider <small>independent of the remote resolver above — try a different one if this doesn't load</small></span>
-            <select id="optLocalDohProvider" class="field-sub">
-              <option value="cloudflare" selected>Cloudflare — cloudflare-dns.com</option>
-              <option value="google">Google — dns.google</option>
-              <option value="quad9">Quad9 — dns.quad9.net</option>
-              <option value="alidns">AliDNS — dns.alidns.com</option>
-              <option value="custom">Custom domain…</option>
+          <input type="text" id="optBootstrapDnsCustom" class="field-sub" placeholder="1.1.1.1" hidden>
+
+          <label class="field">
+            <span class="field-label">IP strategy <small>sing-box <code>domain_resolver.strategy</code> — applied wherever remote/direct DNS resolution happens</small></span>
+            <select id="optDnsStrategy">
+              <option value="" selected>Default (no preference)</option>
+              <option value="prefer_ipv4">Prefer IPv4</option>
+              <option value="prefer_ipv6">Prefer IPv6</option>
+              <option value="ipv4_only">IPv4 only</option>
+              <option value="ipv6_only">IPv6 only</option>
             </select>
           </label>
-          <input type="text" id="optLocalDohProviderCustom" class="field-sub" placeholder="doh.example.com" hidden>
 
           <label class="toggle">
             <input type="checkbox" id="optBlockQuic" checked>
@@ -162,7 +177,7 @@
           <label class="toggle">
             <input type="checkbox" id="optBlockIpv6" checked>
             <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            <span class="toggle-text">Reject IPv6<small>drops IPv6 traffic that reaches the tunnel — the TUN interface is IPv4-only, so IPv6 typically bypasses it via the physical adapter rather than being captured here; true leak-proofing needs IPv6 disabled at the OS/adapter level</small></span>
+            <span class="toggle-text">Reject IPv6<small>drops IPv6 traffic that reaches the tunnel — the TUN interface is IPv4-only, so IPv6 typically bypasses it via the physical adapter rather than being captured here</small></span>
           </label>
         </fieldset>
 
@@ -195,9 +210,38 @@
             <span class="toggle-text">Strict route<small>forces all system traffic into the TUN, even off-subnet</small></span>
           </label>
           <label class="field">
-            <span class="field-label">Exclude this client's own traffic by binary path <small>optional, extra safety alongside <code>auto_detect_interface</code> — one full path per line, e.g. where your sing-box binary actually lives</small></span>
-            <textarea id="optSelfProcessPaths" class="bypass-input" rows="2" spellcheck="false"
-              placeholder="C:\sing-box\sing-box.exe"></textarea>
+            <span class="field-label">ICMP routing <small>ping/traceroute policy — matches v2rayN's own TUN ICMP options</small></span>
+            <select id="optIcmpRouting">
+              <option value="rule" selected>Follow ordinary routing rules</option>
+              <option value="direct">Always direct</option>
+              <option value="unreachable">Reject — unreachable reply</option>
+              <option value="drop">Reject — silent drop</option>
+              <option value="reply">Reject — fake reply</option>
+            </select>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="optTlsFragment">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-text">TLS record fragmentation<small>splits sniffed TLS ClientHellos to evade SNI-based blocking — from v2rayN's <code>EnableFragment</code> option</small></span>
+          </label>
+          <span class="field-label field-label-hint">
+            This client's own traffic is always excluded from the tunnel automatically, by process name —
+            matching v2rayN's own behavior. No manual path needed.
+          </span>
+        </fieldset>
+
+        <fieldset class="opt-group">
+          <legend>TLS fingerprint</legend>
+          <label class="field">
+            <span class="field-label">Force a fingerprint even if the link doesn't specify one <small>off by default — v2rayN itself never forces one; this is this tool's own addition</small></span>
+            <select id="optForceFingerprint">
+              <option value="" selected>Off — use exactly what the link specifies</option>
+              <option value="chrome">Force Chrome</option>
+              <option value="firefox">Force Firefox</option>
+              <option value="safari">Force Safari</option>
+              <option value="ios">Force iOS</option>
+              <option value="randomized">Force randomized</option>
+            </select>
           </label>
         </fieldset>
 
@@ -316,23 +360,23 @@
   </div>
 
   <section class="notes">
-    <h2>reading the output</h2>
+    <h2>what's actually different here</h2>
     <div class="notes-grid">
       <div class="note">
-        <h3>DNS never leaks in the clear</h3>
-        <p>Remote lookups go out as DoH, and that DoH request is itself sent through the <code>proxy</code> outbound — your resolver sees the proxy server, never your ISP. Direct/LAN domains use the local resolver over plain UDP so split-horizon and captive portals still work.</p>
+        <h3>Bootstrap DNS, not a hosts-only guess</h3>
+        <p>A small plain-IP bootstrap resolver handles resolving the remote/direct DNS servers' own hostnames by default — so <em>any</em> custom DoH provider works, not just ones hardcoded into a hosts table. The static hosts table still exists and is used automatically as a faster override, but only for the handful of well-known providers it actually contains.</p>
+      </div>
+      <div class="note">
+        <h3>Real self-loop protection</h3>
+        <p>The TUN interface's own address is explicitly rejected-and-dropped in <code>route.rules</code>, matched per single address rather than by CIDR prefix — on Linux, sing-tun registers a derived address in that same prefix range with systemd-resolved as a DNS upstream, so a prefix-wide match would silently break system DNS. This client's own traffic is also always excluded by process name automatically — no manual path to configure.</p>
+      </div>
+      <div class="note">
+        <h3>No forced TLS fingerprint</h3>
+        <p>If your <code>vless://</code> link doesn't specify <code>fp=</code>, no <code>utls</code> block is added at all — matching v2rayN's own behavior, which never fakes a fingerprint you didn't ask for. Want one anyway? The "Force a fingerprint" option under TLS fingerprint adds it explicitly, clearly as this tool's own addition on top.</p>
       </div>
       <div class="note">
         <h3>Fail closed, not fail open</h3>
-        <p><code>route.final</code> is <code>proxy</code>. Anything not explicitly matched to <code>direct</code> — private IPs and the geosite-private set — goes through the tunnel. If the tunnel is down, it fails, it doesn't silently fall back to your real IP.</p>
-      </div>
-      <div class="note">
-        <h3>Two common leak paths, closed by default</h3>
-        <p>QUIC (UDP/443) can carry HTTP/3 straight past a TCP-only proxy path; it's rejected. IPv6 isn't captured by the IPv4-only TUN address here, so it's rejected too rather than left to route unprotected — both are toggles above if you'd rather handle them differently.</p>
-      </div>
-      <div class="note">
-        <h3>Platform paths</h3>
-        <p>This page targets Windows — drive-letter paths and <code>.exe</code> process names throughout. The config.json <em>schema</em> is identical on Linux; only these path/name strings differ. Need Linux instead? See the <a href="linux.html">Linux version</a>. Point the rule-set path at wherever your sing-box install keeps its <code>.srs</code> files, or leave it on auto-download.</p>
+        <p><code>route.final</code> is <code>proxy</code>. Anything not explicitly matched to <code>direct</code> — private IPs and (optionally) the geosite-private set — goes through the tunnel. If the tunnel is down, it fails, it doesn't silently fall back to your real IP.</p>
       </div>
     </div>
   </section>
@@ -343,6 +387,6 @@
 
 </main>
 
-<script src="app.js"></script>
+<script src="app-v2rayn.js"></script>
 </body>
 </html>

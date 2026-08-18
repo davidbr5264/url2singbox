@@ -27,6 +27,7 @@
       <span class="pill">runs in your browser</span>
       <span class="pill pill-target" id="platformPill">target: sing-box · linux</span>
       <a href="index.html" class="pill pill-link">windows version →</a>
+      <a href="v2rayn.html" class="pill pill-link">v2rayN-faithful version →</a>
     </div>
   </div>
 </header>
@@ -161,7 +162,7 @@
           <label class="toggle">
             <input type="checkbox" id="optBlockIpv6" checked>
             <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            <span class="toggle-text">Reject IPv6<small>adds an IPv6 TUN address so v6 traffic is actually captured, then dropped — off leaves it unrouted and on the physical adapter</small></span>
+            <span class="toggle-text">Reject IPv6<small>drops IPv6 traffic that reaches the tunnel — the TUN interface is IPv4-only, so IPv6 typically bypasses it via the physical adapter rather than being captured here; true leak-proofing needs IPv6 disabled at the OS/adapter level</small></span>
           </label>
         </fieldset>
 
