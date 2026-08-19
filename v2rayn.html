@@ -133,25 +133,25 @@
           <label class="field">
             <span class="field-label">Direct resolver <small>for LAN, bypass domains &amp; geosite-private</small></span>
             <select id="optDirectDns">
-              <option value="119.29.29.29" selected>119.29.29.29 — DNSPod (v2rayN default)</option>
+              <option value="119.29.29.29">119.29.29.29 — DNSPod (v2rayN default)</option>
               <option value="223.5.5.5">223.5.5.5 — AliDNS</option>
               <option value="https://doh.pub/dns-query">doh.pub (v2rayN default DoH option)</option>
-              <option value="system">System default — for networks where DNSPod is unreachable</option>
+              <option value="system" selected>System default — for networks where DNSPod is unreachable</option>
               <option value="custom">Custom address…</option>
             </select>
           </label>
           <input type="text" id="optDirectDnsCustom" class="field-sub" placeholder="1.1.1.1 or https://doh.example.com/dns-query" hidden>
           <span class="field-label field-label-hint">
-            119.29.29.29 (DNSPod) is v2rayN's actual default, but it's a China-anycast address — unreachable for
-            many users outside China. If direct/bypass domains fail to load, switch this to <strong>System default</strong>.
+            v2rayN's actual default is 119.29.29.29 (DNSPod), but it's a China-anycast address — unreachable for
+            many users outside China. Defaulted to <strong>System default</strong> here instead.
           </span>
 
           <label class="field">
             <span class="field-label">Bootstrap resolver <small>resolves the remote/direct servers' own hostnames — plain IP, no chicken-and-egg problem</small></span>
             <select id="optBootstrapDns">
-              <option value="119.29.29.29" selected>119.29.29.29 — DNSPod (v2rayN default)</option>
+              <option value="119.29.29.29">119.29.29.29 — DNSPod (v2rayN default)</option>
               <option value="223.5.5.5">223.5.5.5 — AliDNS</option>
-              <option value="system">System default</option>
+              <option value="system" selected>System default</option>
               <option value="custom">Custom IP…</option>
             </select>
           </label>
@@ -249,7 +249,7 @@
           <legend>Local inbounds</legend>
 
           <label class="toggle">
-            <input type="checkbox" id="optSocksEnable" checked>
+            <input type="checkbox" id="optSocksEnable">
             <span class="toggle-track"><span class="toggle-thumb"></span></span>
             <span class="toggle-text">SOCKS/HTTP mixed inbound<small>for apps that don't use the system proxy</small></span>
           </label>
@@ -259,7 +259,7 @@
           </label>
 
           <label class="toggle">
-            <input type="checkbox" id="optClashApi" checked>
+            <input type="checkbox" id="optClashApi">
             <span class="toggle-track"><span class="toggle-thumb"></span></span>
             <span class="toggle-text">Clash API<small>for GUI clients (v2rayN tray, yacd, etc.) — bound to localhost</small></span>
           </label>
@@ -277,7 +277,7 @@
           <legend>Rule sets &amp; misc</legend>
 
           <label class="toggle">
-            <input type="checkbox" id="optUseGeositePrivate" checked>
+            <input type="checkbox" id="optUseGeositePrivate">
             <span class="toggle-track"><span class="toggle-thumb"></span></span>
             <span class="toggle-text">geosite-private rule-set<small>matches local-network hostnames (router/NAS/printer admin panels, etc.) direct — not required: <code>ip_is_private</code> already routes private IPs direct on its own, with no file or download</small></span>
           </label>
@@ -303,7 +303,7 @@
           </label>
 
           <label class="toggle">
-            <input type="checkbox" id="optCacheFile" checked>
+            <input type="checkbox" id="optCacheFile">
             <span class="toggle-track"><span class="toggle-thumb"></span></span>
             <span class="toggle-text">DNS cache file<small>persists fakeip/cache across restarts, kept next to config.json</small></span>
           </label>
