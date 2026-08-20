@@ -26,6 +26,12 @@ const V2RAYN_PREDEFINED_HOSTS = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Fixed rather than user-editable — nobody meaningfully needs to change
+// these, so they're no longer fields in the UI at all.
+const FIXED_TUN_NAME = "singbox_tun";
+const FIXED_TUN_MTU = 9000;
+const FIXED_LOG_LEVEL = "warn";
+
 // ============================================================
 // v2rayN-FAITHFUL DNS ADDRESS PARSING
 // Direct port of ParseDnsAddress() in v2rayN's SingboxDnsService.cs.
@@ -694,9 +700,7 @@ const optionEls = {
   forceFingerprint: document.getElementById("optForceFingerprint"),
   blockQuic: document.getElementById("optBlockQuic"),
   blockIpv6: document.getElementById("optBlockIpv6"),
-  tunName: document.getElementById("optTunName"),
   tunAddr: document.getElementById("optTunAddr"),
-  tunMtu: document.getElementById("optTunMtu"),
   tunStack: document.getElementById("optTunStack"),
   strictRoute: document.getElementById("optStrictRoute"),
   icmpRouting: document.getElementById("optIcmpRouting"),
@@ -709,7 +713,6 @@ const optionEls = {
   ruleSetMode: document.getElementById("optRuleSetMode"),
   useGeositePrivate: document.getElementById("optUseGeositePrivate"),
   ruleSetPath: document.getElementById("optRuleSetPath"),
-  logLevel: document.getElementById("optLogLevel"),
   cacheFile: document.getElementById("optCacheFile"),
   bypassDomains: document.getElementById("optBypassDomains"),
   bypassApps: document.getElementById("optBypassApps"),
@@ -911,9 +914,9 @@ function readOptions() {
     forceFingerprint: optionEls.forceFingerprint.value,
     blockQuic: optionEls.blockQuic.checked,
     blockIpv6: optionEls.blockIpv6.checked,
-    tunName: optionEls.tunName.value.trim() || "singbox_tun",
+    tunName: FIXED_TUN_NAME,
     tunAddr: optionEls.tunAddr.value.trim() || "172.18.0.1/30",
-    tunMtu: parseInt(optionEls.tunMtu.value, 10) || 9000,
+    tunMtu: FIXED_TUN_MTU,
     tunStack: optionEls.tunStack.value,
     strictRoute: optionEls.strictRoute.checked,
     icmpRouting: optionEls.icmpRouting.value,
@@ -926,7 +929,7 @@ function readOptions() {
     ruleSetMode: optionEls.ruleSetMode.value,
     useGeositePrivate: optionEls.useGeositePrivate.checked,
     ruleSetPath: optionEls.ruleSetPath.value.trim() || defaultRuleSetPath(optionEls.platform.value),
-    logLevel: optionEls.logLevel.value,
+    logLevel: FIXED_LOG_LEVEL,
     cacheFile: optionEls.cacheFile.checked,
   };
 }

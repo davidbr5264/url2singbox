@@ -5,6 +5,14 @@ hardened `config.json` for the [sing-box](https://sing-box.sagernet.org) core
 on Windows or Linux. Nothing is uploaded anywhere — parsing and config
 generation run entirely in the browser tab.
 
+**UI**: a light "engineering blueprint" theme (cobalt ink on pale grid paper,
+Space Grotesk/Inter/IBM Plex Mono) — each page shows a small "quick setup"
+section up front and tucks everything else behind labeled, collapsible
+"Advanced" sections (native `<details>`, no JS framework needed). TUN
+interface name, MTU, and log level are no longer fields at all — fixed to
+`singbox_tun`, `9000`, and `warn`, since essentially nobody needs to change
+them.
+
 Two separate pages, one per platform — [`index.html`](index.html) for
 Windows, [`linux.html`](linux.html) for Linux — cross-linked to each other.
 Each page locks its platform; there's no in-page toggle to get wrong. Path

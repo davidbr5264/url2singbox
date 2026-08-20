@@ -28,6 +28,12 @@ const DOH_PROVIDERS = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Fixed rather than user-editable — nobody meaningfully needs to change
+// these, so they're no longer fields in the UI at all.
+const FIXED_TUN_NAME = "singbox_tun";
+const FIXED_TUN_MTU = 9000;
+const FIXED_LOG_LEVEL = "warn";
+
 // Path/process-name conventions differ by OS; the sing-box config.json
 // schema itself does not. These three fields are the ones whose *content*
 // is shaped for one platform and meaningless (or actively wrong) on the
@@ -600,9 +606,7 @@ const optionEls = {
   localDohProviderCustom: document.getElementById("optLocalDohProviderCustom"),
   blockQuic: document.getElementById("optBlockQuic"),
   blockIpv6: document.getElementById("optBlockIpv6"),
-  tunName: document.getElementById("optTunName"),
   tunAddr: document.getElementById("optTunAddr"),
-  tunMtu: document.getElementById("optTunMtu"),
   tunStack: document.getElementById("optTunStack"),
   strictRoute: document.getElementById("optStrictRoute"),
   socksEnable: document.getElementById("optSocksEnable"),
@@ -613,7 +617,6 @@ const optionEls = {
   ruleSetMode: document.getElementById("optRuleSetMode"),
   useGeositePrivate: document.getElementById("optUseGeositePrivate"),
   ruleSetPath: document.getElementById("optRuleSetPath"),
-  logLevel: document.getElementById("optLogLevel"),
   cacheFile: document.getElementById("optCacheFile"),
   bypassDomains: document.getElementById("optBypassDomains"),
   bypassApps: document.getElementById("optBypassApps"),
@@ -824,9 +827,9 @@ function readOptions() {
     localDohProviderCustom: optionEls.localDohProviderCustom.value.trim(),
     blockQuic: optionEls.blockQuic.checked,
     blockIpv6: optionEls.blockIpv6.checked,
-    tunName: optionEls.tunName.value.trim() || "singbox_tun",
+    tunName: FIXED_TUN_NAME,
     tunAddr: optionEls.tunAddr.value.trim() || "172.18.0.1/30",
-    tunMtu: parseInt(optionEls.tunMtu.value, 10) || 9000,
+    tunMtu: FIXED_TUN_MTU,
     tunStack: optionEls.tunStack.value,
     strictRoute: optionEls.strictRoute.checked,
     socksEnable: optionEls.socksEnable.checked,
@@ -837,7 +840,7 @@ function readOptions() {
     ruleSetMode: optionEls.ruleSetMode.value,
     useGeositePrivate: optionEls.useGeositePrivate.checked,
     ruleSetPath: optionEls.ruleSetPath.value.trim() || defaultRuleSetPath(optionEls.platform.value),
-    logLevel: optionEls.logLevel.value,
+    logLevel: FIXED_LOG_LEVEL,
     cacheFile: optionEls.cacheFile.checked,
   };
 }
