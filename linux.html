@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vless → sing-box · config forge (linux)</title>
+<meta name="description" content="Convert vless:// links into sing-box client configs for Linux, generated with the same DNS/routing architecture as v2rayN's actual source code. Runs entirely in your browser — nothing is uploaded.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 rx=%222%22 fill=%22%230a0a0a%22/><path d=%22M4 12h4l2-6 4 12 2-6h4%22 stroke=%22%23e0a030%22 stroke-width=%222%22 fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M2 12h4.5l2.5-7 5 14 2.5-7H22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="brand-text">config<span class="brand-accent">forge</span></span>
+    </div>
+    <div class="top-meta">
+      <span class="pill">runs in your browser</span>
+      <span class="pill pill-target" id="platformPill">target: sing-box · linux</span>
+      <a href="index.html" class="pill pill-link">windows version →</a>
+    </div>
+  </div>
+</header>
+
+<main class="shell">
+
+  <section class="intro">
+    <p class="eyebrow">vless:// → config.json</p>
+    <h1>Built from v2rayN's own C# source, not reverse-engineered.</h1>
+    <p class="lede" id="ledeText">Paste one or more <code>vless://</code> links. This tool's DNS and routing generation is ported directly from v2rayN's actual <code>SingboxDnsService.cs</code> / <code>SingboxRoutingService.cs</code> source (bootstrap DNS resolver, TUN self-loop protection, automatic self-process exclusion, ICMP routing policy) rather than reverse-engineered from example exports. Nothing leaves this tab: the conversion runs locally in JavaScript.</p>
+  </section>
+
+  <!-- SIGNAL PATH — signature element -->
+  <section class="signal-path" id="signalPath" aria-label="Connection path status">
+    <div class="path-track">
+      <div class="path-node" data-node="link" data-state="idle">
+        <span class="node-box"></span>
+        <span class="node-label">link</span>
+      </div>
+      <div class="path-wire" data-wire="1"><span class="wire-pulse"></span></div>
+      <div class="path-node" data-node="tls" data-state="idle">
+        <span class="node-box"></span>
+        <span class="node-label">tls / reality</span>
+      </div>
+      <div class="path-wire" data-wire="2"><span class="wire-pulse"></span></div>
+      <div class="path-node" data-node="dns" data-state="idle">
+        <span class="node-box"></span>
+        <span class="node-label">doh dns</span>
+      </div>
+      <div class="path-wire" data-wire="3"><span class="wire-pulse"></span></div>
+      <div class="path-node" data-node="route" data-state="idle">
+        <span class="node-box"></span>
+        <span class="node-label">route</span>
+      </div>
+      <div class="path-wire" data-wire="4"><span class="wire-pulse"></span></div>
+      <div class="path-node" data-node="out" data-state="idle">
+        <span class="node-box"></span>
+        <span class="node-label">config.json</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="workspace">
+
+    <!-- LEFT: INPUT + OPTIONS -->
+    <section class="panel input-panel">
+
+      <div class="panel-head">
+        <h2>01 · links</h2>
+        <span class="panel-sub">one per line</span>
+      </div>
+
+      <textarea id="vlessInput" class="link-input" rows="5" spellcheck="false"
+        placeholder="vless://uuid@server:443?security=reality&type=tcp&flow=xtls-rprx-vision&pbk=...&sid=...&sni=...#My-Server"></textarea>
+
+      <div class="input-row">
+        <button id="parseBtn" class="btn btn-primary">parse links</button>
+        <button id="sampleBtn" class="btn btn-ghost">load sample</button>
+        <span id="parseStatus" class="parse-status"></span>
+      </div>
+
+      <div id="linkResults" class="link-results" aria-live="polite"></div>
+
+      <div class="panel-head panel-head-spaced">
+        <h2>02 · setup</h2>
+        <div class="panel-head-actions">
+          <span class="panel-sub">hardened defaults — edit if needed</span>
+          <span id="settingsStatus" class="parse-status"></span>
+          <button id="resetOptionsBtn" class="btn btn-ghost btn-sm" type="button">reset to defaults</button>
+        </div>
+      </div>
+
+      <div class="options-grid">
+
+        <fieldset class="opt-group opt-group-wide platform-banner">
+          <legend>Target platform</legend>
+          <div class="platform-badge">
+            <span class="platform-badge-dot"></span>
+            <div class="platform-badge-text">
+              <strong>This build targets Linux.</strong>
+              <span class="field-label field-label-hint" id="platformHint">TUN mode needs elevated capabilities — run as root, or grant the binary CAP_NET_ADMIN/CAP_NET_RAW (and CAP_SYS_PTRACE if using bypass applications) via setcap.</span>
+            </div>
+            <a href="index.html" class="btn btn-ghost btn-sm">switch to Windows version →</a>
+          </div>
+          <select id="optPlatform" hidden><option value="linux" selected>Linux</option></select>
+        </fieldset>
+
+        <fieldset class="opt-group">
+          <legend>DNS &amp; privacy <span class="legend-note">— v2rayN's 3-tier bootstrap architecture</span></legend>
+
+          <label class="field">
+            <span class="field-label">Remote resolver <small>tunneled through the proxy</small></span>
+            <select id="optRemoteDns">
+              <option value="https://cloudflare-dns.com/dns-query" selected>Cloudflare — cloudflare-dns.com</option>
+              <option value="https://dns.google/dns-query">Google — dns.google</option>
+              <option value="https://dns.cloudflare.com/dns-query">Cloudflare (alt) — dns.cloudflare.com</option>
+              <option value="1.1.1.1">1.1.1.1 (plain, not DoH)</option>
+              <option value="custom">Custom address…</option>
+            </select>
+          </label>
+          <input type="text" id="optRemoteDnsCustom" class="field-sub" placeholder="https://doh.example.com/dns-query" hidden>
+
+          <label class="field">
+            <span class="field-label">Direct resolver <small>for LAN, bypass domains &amp; geosite-private</small></span>
+            <select id="optDirectDns">
+              <option value="119.29.29.29">119.29.29.29 — DNSPod (v2rayN default)</option>
+              <option value="223.5.5.5">223.5.5.5 — AliDNS</option>
+              <option value="https://doh.pub/dns-query">doh.pub (v2rayN default DoH option)</option>
+              <option value="system" selected>System default — for networks where DNSPod is unreachable</option>
+              <option value="custom">Custom address…</option>
+            </select>
+          </label>
+          <input type="text" id="optDirectDnsCustom" class="field-sub" placeholder="1.1.1.1 or https://doh.example.com/dns-query" hidden>
+          <span class="field-label field-label-hint">
+            v2rayN's actual default is 119.29.29.29 (DNSPod), but it's a China-anycast address — unreachable for
+            many users outside China. Defaulted to <strong>System default</strong> here instead.
+          </span>
+        </fieldset>
+
+        <fieldset class="opt-group">
+          <legend>Leak protection</legend>
+
+          <label class="toggle">
+            <input type="checkbox" id="optBlockQuic" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-text">Block UDP/443 (QUIC)<small>stops traffic bypassing the proxy over HTTP/3</small></span>
+          </label>
+
+          <label class="toggle">
+            <input type="checkbox" id="optBlockIpv6" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-text">Reject IPv6<small>drops IPv6 that reaches the tunnel — true leak-proofing needs it disabled at the OS/adapter level too</small></span>
+          </label>
+
+          <label class="toggle">
+            <input type="checkbox" id="optSocksEnable">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-text">SOCKS/HTTP inbound<small>for apps that don't use the system proxy — off means TUN-only</small></span>
+          </label>
+        </fieldset>
+
+      </div>
+
+      <details class="advanced">
+        <summary>
+          <span class="adv-title"><span class="adv-chevron"></span> DNS internals</span>
+          <span class="panel-sub">bootstrap resolver, IP strategy</span>
+        </summary>
+        <div class="advanced-body">
+          <div class="options-grid">
+            <fieldset class="opt-group opt-group-wide" style="border:none; padding:0;">
+              <label class="field">
+                <span class="field-label">Bootstrap resolver <small>resolves the remote/direct servers' own hostnames — plain IP, no chicken-and-egg problem</small></span>
+                <select id="optBootstrapDns">
+                  <option value="119.29.29.29">119.29.29.29 — DNSPod (v2rayN default)</option>
+                  <option value="223.5.5.5">223.5.5.5 — AliDNS</option>
+                  <option value="system" selected>System default</option>
+                  <option value="custom">Custom IP…</option>
+                </select>
+              </label>
+              <input type="text" id="optBootstrapDnsCustom" class="field-sub" placeholder="1.1.1.1" hidden>
+
+              <label class="field">
+                <span class="field-label">IP strategy <small>sing-box <code>domain_resolver.strategy</code> — applied wherever remote/direct DNS resolution happens</small></span>
+                <select id="optDnsStrategy">
+                  <option value="" selected>Default (no preference)</option>
+                  <option value="prefer_ipv4">Prefer IPv4</option>
+                  <option value="prefer_ipv6">Prefer IPv6</option>
+                  <option value="ipv4_only">IPv4 only</option>
+                  <option value="ipv6_only">IPv6 only</option>
+                </select>
+              </label>
+            </fieldset>
+          </div>
+        </div>
+      </details>
+
+      <details class="advanced">
+        <summary>
+          <span class="adv-title"><span class="adv-chevron"></span> TUN &amp; local inbounds</span>
+          <span class="panel-sub">interface, ICMP, fragmentation, ports</span>
+        </summary>
+        <div class="advanced-body">
+          <div class="options-grid">
+            <fieldset class="opt-group">
+              <legend>TUN interface</legend>
+              <label class="field">
+                <span class="field-label">Address (CIDR)</span>
+                <input type="text" id="optTunAddr" value="172.18.0.1/30">
+              </label>
+              <label class="field">
+                <span class="field-label">Stack</span>
+                <select id="optTunStack">
+                  <option value="gvisor" selected>gvisor — safest, most compatible</option>
+                  <option value="mixed">mixed</option>
+                  <option value="system">system — fastest, needs native TUN driver support</option>
+                </select>
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="optStrictRoute" checked>
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-text">Strict route<small>forces all system traffic into the TUN, even off-subnet</small></span>
+              </label>
+              <label class="field">
+                <span class="field-label">ICMP routing <small>ping/traceroute policy — matches v2rayN's own TUN ICMP options</small></span>
+                <select id="optIcmpRouting">
+                  <option value="rule" selected>Follow ordinary routing rules</option>
+                  <option value="direct">Always direct</option>
+                  <option value="unreachable">Reject — unreachable reply</option>
+                  <option value="drop">Reject — silent drop</option>
+                  <option value="reply">Reject — fake reply</option>
+                </select>
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="optTlsFragment">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-text">TLS record fragmentation<small>splits sniffed TLS ClientHellos to evade SNI-based blocking — from v2rayN's <code>EnableFragment</code> option</small></span>
+              </label>
+              <span class="field-label field-label-hint">
+                This client's own traffic is always excluded from the tunnel automatically, by process name —
+                matching v2rayN's own behavior. No manual path needed.
+              </span>
+            </fieldset>
+
+            <fieldset class="opt-group">
+              <legend>Local inbounds</legend>
+              <label class="field field-inline" id="socksPortRow">
+                <span class="field-label">SOCKS port</span>
+                <input type="number" id="optSocksPort" value="10808">
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="optClashApi">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-text">Clash API<small>for GUI clients (v2rayN tray, yacd, etc.) — bound to localhost</small></span>
+              </label>
+              <label class="field field-inline" id="clashPortRow">
+                <span class="field-label">Port</span>
+                <input type="number" id="optClashPort" value="10814">
+              </label>
+              <label class="field" id="clashSecretRow">
+                <span class="field-label">API secret <small>recommended if exposing beyond localhost</small></span>
+                <input type="text" id="optClashSecret" placeholder="leave blank for none">
+              </label>
+            </fieldset>
+          </div>
+        </div>
+      </details>
+
+      <details class="advanced">
+        <summary>
+          <span class="adv-title"><span class="adv-chevron"></span> Fingerprint &amp; rule sets</span>
+          <span class="panel-sub">TLS fingerprint, geosite-private, caching</span>
+        </summary>
+        <div class="advanced-body">
+          <div class="options-grid">
+            <fieldset class="opt-group">
+              <legend>TLS fingerprint</legend>
+              <label class="field">
+                <span class="field-label">Force a fingerprint even if the link doesn't specify one <small>off by default — v2rayN itself never forces one; this is this tool's own addition</small></span>
+                <select id="optForceFingerprint">
+                  <option value="" selected>Off — use exactly what the link specifies</option>
+                  <option value="chrome">Force Chrome</option>
+                  <option value="firefox">Force Firefox</option>
+                  <option value="safari">Force Safari</option>
+                  <option value="ios">Force iOS</option>
+                  <option value="randomized">Force randomized</option>
+                </select>
+              </label>
+            </fieldset>
+
+            <fieldset class="opt-group">
+              <legend>Rule sets &amp; caching</legend>
+              <label class="toggle">
+                <input type="checkbox" id="optUseGeositePrivate">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-text">geosite-private rule-set<small>matches local-network hostnames direct — not required: <code>ip_is_private</code> already covers private IPs on its own</small></span>
+              </label>
+              <label class="field" id="ruleSetModeRow">
+                <span class="field-label">geosite-private rule-set source</span>
+                <select id="optRuleSetMode">
+                  <option value="remote">Auto-download (SagerNet, recommended)</option>
+                  <option value="local" selected>Local file on disk</option>
+                </select>
+              </label>
+              <input type="text" id="optRuleSetPath" class="field-sub"
+                     value="/etc/sing-box/geosite-private.srs">
+              <label class="toggle">
+                <input type="checkbox" id="optCacheFile">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-text">DNS cache file<small>persists fakeip/cache across restarts, kept next to config.json</small></span>
+              </label>
+            </fieldset>
+          </div>
+        </div>
+      </details>
+
+      <details class="advanced">
+        <summary>
+          <span class="adv-title"><span class="adv-chevron"></span> Bypass rules</span>
+          <span class="panel-sub">domains &amp; apps sent direct</span>
+        </summary>
+        <div class="advanced-body">
+          <fieldset class="opt-group opt-group-wide" style="border:none; padding:0;">
+            <span class="field-label">Bypass domains <span class="legend-note">— one per line, matches the domain and its subdomains by default</span></span>
+            <textarea id="optBypassDomains" class="bypass-input" rows="4" spellcheck="false"
+              placeholder="example.com&#10;.internal.corp.example&#10;keyword:analytics&#10;regex:^ads\."></textarea>
+            <span class="field-label field-label-hint">
+              Prefix a line with <code>.</code> or <code>*.</code> to match subdomains only ·
+              <code>keyword:</code> for a substring match · <code>regex:</code> for a regular expression
+            </span>
+          </fieldset>
+
+          <fieldset class="opt-group opt-group-wide" style="border:none; padding:0; margin-top:16px;">
+            <span class="field-label" id="bypassAppsLabel">Bypass applications — one Linux process name per line</span>
+            <textarea id="optBypassApps" class="bypass-input" rows="3" spellcheck="false"
+              placeholder="steam&#10;discord&#10;/usr/bin/some-launcher"></textarea>
+            <span class="field-label field-label-hint" id="bypassAppsHint">
+              Matches by process name — a full path is fine too, only the filename is used. Linux
+              truncates process names to 15 characters internally. Useful for apps that break under a VPN/TUN.
+            </span>
+          </fieldset>
+        </div>
+      </details>
+
+    </section>
+
+    <!-- RIGHT: OUTPUT -->
+    <section class="panel output-panel">
+      <div class="panel-head">
+        <h2>03 · config.json</h2>
+        <div class="output-actions">
+          <button id="copyBtn" class="btn btn-ghost btn-sm" disabled>copy</button>
+          <button id="downloadBtn" class="btn btn-primary btn-sm" disabled>download config.json</button>
+        </div>
+      </div>
+
+      <div id="warnings" class="warnings" hidden></div>
+
+      <pre id="output" class="output-code"><code id="outputCode">// parse a link on the left to generate a config here</code></pre>
+    </section>
+
+  </div>
+
+  <section class="notes">
+    <h2>reading the output</h2>
+    <div class="notes-grid">
+      <div class="note">
+        <h3>Bootstrap DNS, not a hosts-only guess</h3>
+        <p>A small plain-IP bootstrap resolver handles resolving the remote/direct DNS servers' own hostnames by default — so <em>any</em> custom DoH provider works, not just ones hardcoded into a hosts table. The static hosts table still exists and is used automatically as a faster override, but only for the handful of well-known providers it actually contains.</p>
+      </div>
+      <div class="note">
+        <h3>Real self-loop protection</h3>
+        <p>The TUN interface's own address is explicitly rejected-and-dropped in <code>route.rules</code>, matched per single address rather than by CIDR prefix — on Linux, sing-tun registers a derived address in that same prefix range with systemd-resolved as a DNS upstream, so a prefix-wide match would silently break system DNS. This client's own traffic is also always excluded by process name automatically — no manual path to configure.</p>
+      </div>
+      <div class="note">
+        <h3>No forced TLS fingerprint</h3>
+        <p>If your <code>vless://</code> link doesn't specify <code>fp=</code>, no <code>utls</code> block is added at all — matching v2rayN's own behavior, which never fakes a fingerprint you didn't ask for. Want one anyway? The "Force a fingerprint" option under TLS fingerprint adds it explicitly, clearly as this tool's own addition on top.</p>
+      </div>
+      <div class="note">
+        <h3>Fail closed, not fail open</h3>
+        <p><code>route.final</code> is <code>proxy</code>. Anything not explicitly matched to <code>direct</code> — private IPs and (optionally) the geosite-private set — goes through the tunnel. If the tunnel is down, it fails, it doesn't silently fall back to your real IP.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <p>Client-side only — your links, UUIDs, and keys are never transmitted anywhere. Verify with <code>sing-box check -c config.json</code> before relying on it. Interface name is fixed to <code>singbox_tun</code>, MTU to <code>9000</code>, and log level to <code>warn</code> — sensible defaults nobody typically needs to change.</p>
+  </footer>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
